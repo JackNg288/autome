@@ -1,0 +1,23 @@
+name: Run MEXC Trading Signal Bot
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"  # Every 15 mins UTC
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pandas
+
+      - name: Run signal bot
+        run: python mexc_bot.py
