@@ -3,7 +3,7 @@ name: Run MEXC Bot Every 5 Minutes
 on:
   schedule:
     - cron: "*/5 * * * *"
-  workflow_dispatch:  # Optional: keeps manual trigger too
+  workflow_dispatch: 
 
 jobs:
   run-bot:
