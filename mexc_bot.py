@@ -46,3 +46,4 @@ for symbol in SYMBOLS:
 
 if messages:
     send_alert("\n".join(messages))
+send_alert("✅ Bot ran successfully at " + time.strftime("%Y-%m-%d %H:%M:%S"))
