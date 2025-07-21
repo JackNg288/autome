@@ -570,7 +570,7 @@ class MEXCBot:
             except Exception as e:
                 logger.error(f"Critical error in main loop: {e}")
                 self.send_telegram_alert(f"❗️Bot error: {e}")
-                time.sleep(30)
+                time.sleep(1)
 
 if __name__ == "__main__":
     bot = MEXCBot()
