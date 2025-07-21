@@ -423,24 +423,17 @@ class MEXCBot:
             logger.error(f"Error generating market overview: {e}")
             return "Market overview unavailable"
 
+import time
+
 def main():
-    """Main function"""
     bot = MEXCBot()
-    
-    # Optional: Send startup message with current symbols
-    startup_msg = (
-        "🤖 *Sig_288bot v2.0 Started*\n"
-        "Strategy: EMA5/EMA10 Crossover + RSI Filter\n"
-        "Timeframes: 5m & 15m\n"
-        "RSI Thresholds: Long >55, Short <45\n\n"
-        f"📋 Monitoring {len(bot.symbols)} symbols:\n" +
-        "\n".join([f"• {symbol}" for symbol in bot.symbols]) +
-        "\n\nUse /help for commands"
-    )
-    bot.send_telegram_alert(startup_msg)
-    
-    # Run analysis
-    bot.run_analysis()
+    while True:
+        try:
+            bot.run_analysis()
+        except Exception as e:
+            logger.error(f"Unhandled exception: {e}")
+        # Wait 5 minutes between runs (customize as needed)
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()
