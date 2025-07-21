@@ -28,8 +28,8 @@ class MEXCBot:
         self.base_url = "https://api.mexc.com"
         
         # Get Telegram credentials from environment variables
-        self.telegram_token = os.getenv('TELEGRAM_TOKEN', 'YOUR_TELEGRAM_TOKEN')
-        self.chat_id = os.getenv('TELEGRAM_CHAT_ID', 'YOUR_CHAT_ID')
+        self.telegram_token = os.getenv('TELEGRAM_TOKEN', '7596862485:AAGNlV893IdMVRVhx07UZjgZf51fKefUNAg')
+        self.chat_id = os.getenv('TELEGRAM_CHAT_ID', '1465742044')
         
         # Request session for better connection management
         self.session = requests.Session()
@@ -43,7 +43,7 @@ class MEXCBot:
         
         Args:
             symbol: Trading pair symbol (e.g., 'BTCUSDT')
-            interval: Time interval ('1m', '5m', '1h', '4h', '1d', etc.)
+            interval: Time interval ('1m', '5m', '1H', '4H', '1D', etc.)
             limit: Number of klines to retrieve (max 1000)
         
         Returns:
