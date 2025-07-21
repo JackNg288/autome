@@ -129,7 +129,7 @@ class MEXCBot:
         self.rsi_long_threshold = 55
         self.rsi_short_threshold = 45
         # 24/7 operation settings
-        self.scan_interval = 5  # seconds between scans
+        self.scan_interval = 30  # seconds between scans
         self.running = True
         # Telegram credentials
         self.telegram_token = os.getenv("TELEGRAM_TOKEN")
