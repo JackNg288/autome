@@ -21,9 +21,9 @@ class MEXCBot:
         self.ema_period = 20
         self.base_url = "https://api.mexc.com"
 
-        # Telegram credentials (set in GitHub Secrets or .env)
-self.telegram_token = os.getenv("TELEGRAM_TOKEN")
-self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        # Telegram credentials (from environment or hardcoded)
+        self.telegram_token = os.getenv("TELEGRAM_TOKEN")  # or hardcode
+        self.chat_id = os.getenv("TELEGRAM_CHAT_ID")        # or hardcode
 
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': 'Sig_288bot/1.0'})
