@@ -41,10 +41,8 @@ class MEXCBot:
                 return None
 
             df = pd.DataFrame(data, columns=[
-                "timestamp", "open", "high", "low", "close", "volume",
-                "close_time", "quote_volume", "trades",
-                "buy_base_volume", "buy_quote_volume", "ignore"
-            ])
+    "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
+])
             df[["close", "volume"]] = df[["close", "volume"]].apply(pd.to_numeric)
             df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
             return df
