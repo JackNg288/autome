@@ -38,7 +38,6 @@ logger = logging.getLogger(__name__)
 
 class MEXCFuturesAPI:
     """MEXC Futures API Client"""
-    
     def __init__(self, api_key: str, api_secret: str, testnet: bool = False):
         self.api_key = api_key
         self.api_secret = api_secret
@@ -60,22 +59,17 @@ class MEXCFuturesAPI:
     def _make_request(self, method: str, endpoint: str, params: dict = None, signed: bool = False) -> dict:
         """Make API request with proper authentication"""
         url = f"{self.base_url}{endpoint}"
-        
         if params is None:
             params = {}
-            
         if signed:
             timestamp = int(time.time() * 1000)
             params['timestamp'] = timestamp
             params['recvWindow'] = 5000
-            
             query_string = urlencode(sorted(params.items()))
             signature = self._generate_signature(query_string)
             params['signature'] = signature
-            
             headers = {'X-MEXC-APIKEY': self.api_key}
             self.session.headers.update(headers)
-        
         try:
             if method.upper() == 'GET':
                 response = self.session.get(url, params=params, timeout=10)
@@ -83,7 +77,6 @@ class MEXCFuturesAPI:
                 response = self.session.post(url, json=params, timeout=10)
             else:
                 response = self.session.request(method, url, params=params, timeout=10)
-                
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -113,13 +106,9 @@ class MEXCFuturesAPI:
             'type': order_type,
             'vol': vol
         }
-        
         if price:
             params['price'] = price
-            
-        # Add additional parameters
         params.update(kwargs)
-        
         return self._make_request('POST', '/api/v1/private/order/submit', params, signed=True)
 
     def get_ticker(self, symbol: str) -> dict:
@@ -132,7 +121,6 @@ class MEXCBot:
         self.symbols_file = "symbols.txt"
         self.symbols = self.load_symbols()
         self.base_url = "https://api.mexc.com"
-        
         # Strategy parameters
         self.ema5_period = 5
         self.ema10_period = 10
@@ -140,38 +128,31 @@ class MEXCBot:
         self.rsi_period = 14
         self.rsi_long_threshold = 55
         self.rsi_short_threshold = 45
-        
         # 24/7 operation settings
         self.scan_interval = 60  # seconds between scans
         self.running = True
-
         # Telegram credentials
         self.telegram_token = os.getenv("TELEGRAM_TOKEN")
         self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
-
         # MEXC Futures API credentials
         self.mexc_api_key = os.getenv("MEXC_API_KEY")
         self.mexc_api_secret = os.getenv("MEXC_API_SECRET")
         self.mexc_testnet = os.getenv("MEXC_TESTNET", "true").lower() == "true"
-        
         # Initialize APIs
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': 'Sig_288bot/2.0'})
-        
         if self.mexc_api_key and self.mexc_api_secret:
             self.futures_api = MEXCFuturesAPI(self.mexc_api_key, self.mexc_api_secret, self.mexc_testnet)
             logger.info(f"MEXC Futures API initialized (testnet: {self.mexc_testnet})")
         else:
             self.futures_api = None
             logger.warning("MEXC API credentials not found - trading disabled")
-        
         # Track last processed update to avoid duplicates
         self.last_update_id = self.load_last_update_id()
 
     def load_symbols(self) -> List[str]:
         """Load symbols from symbols.txt file"""
         default_symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "THEUSDT", "XRPUSDT", "SUIUSDT","CHESSUSDT","OGUSDT","MASKUSDT","EDUUSDT","SHIBUSDT"]
-        
         try:
             if os.path.exists(self.symbols_file):
                 with open(self.symbols_file, 'r') as f:
@@ -229,11 +210,9 @@ class MEXCBot:
             response = self.session.get(url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
-
             if not isinstance(data, list) or len(data) == 0:
                 logger.warning(f"No kline data for {symbol} ({interval})")
                 return None
-
             df = pd.DataFrame(data, columns=[
                 "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
             ])
@@ -261,7 +240,6 @@ class MEXCBot:
         """Get highest and lowest prices from last N candles"""
         if df is None or len(df) < candles:
             return {"highest": 0.0, "lowest": 0.0}
-            
         try:
             last_candles = df.tail(candles)
             highest = last_candles["high"].max()
@@ -275,34 +253,27 @@ class MEXCBot:
         """Check for EMA5/EMA10 crossover signal with RSI filter"""
         if df is None or len(df) < max(self.ema15_period, self.rsi_period) + 5:
             return {"signal": None, "reason": "Insufficient data"}
-
         try:
             # Calculate EMAs
             df["ema5"] = df["close"].ewm(span=self.ema5_period, adjust=False).mean()
             df["ema10"] = df["close"].ewm(span=self.ema10_period, adjust=False).mean()
             df["ema15"] = df["close"].ewm(span=self.ema15_period, adjust=False).mean()
-            
             # Calculate RSI
             df["rsi"] = self.calculate_rsi(df["close"], self.rsi_period)
-            
             # Get latest and previous values
             latest = df.iloc[-1]
             prev = df.iloc[-2]
-            
             # Check for crossovers
             bullish_cross = (latest["ema5"] > latest["ema10"]) and (prev["ema5"] <= prev["ema10"])
             bearish_cross = (latest["ema5"] < latest["ema10"]) and (prev["ema5"] >= prev["ema10"])
-            
             # Apply RSI filter
             rsi_long_ok = latest["rsi"] > self.rsi_long_threshold
             rsi_short_ok = latest["rsi"] < self.rsi_short_threshold
-            
             signal = None
             if bullish_cross and rsi_long_ok:
                 signal = "LONG"
             elif bearish_cross and rsi_short_ok:
                 signal = "SHORT"
-            
             return {
                 "signal": signal,
                 "price": latest["close"],
@@ -324,7 +295,6 @@ class MEXCBot:
     def format_trading_info(self, symbol: str, signal_5m: Dict, signal_15m: Dict, signal_type: str, levels_15m: Dict) -> str:
         """Format trading information with MEXC Futures details"""
         emoji = "🟢" if signal_type == "LONG" else "🔴"
-        
         message = (
             f"{emoji} *{signal_type} SIGNAL: {symbol}*\n"
             f"💰 Current Price: ${signal_5m['price']:.4f}\n"
@@ -354,23 +324,15 @@ class MEXCBot:
         """Execute futures trade via MEXC API"""
         if not self.futures_api:
             return {"success": False, "reason": "Futures API not initialized"}
-            
         try:
-            # Convert symbol format if needed (remove USDT for futures)
             futures_symbol = symbol.replace('USDT', '_USDT') if 'USDT' in symbol else symbol
-            
-            # Determine order parameters
             side = 1 if signal_type == "LONG" else 2  # 1=long, 2=short
             order_type = 1  # 1=limit order
             vol = 1  # Default volume - should be configurable
-            
-            # Set limit price based on signal type and levels
             if signal_type == "LONG":
-                limit_price = min(price, levels['lowest'] * 1.001)  # Slightly above lowest
+                limit_price = min(price, levels['lowest'] * 1.001)
             else:
-                limit_price = max(price, levels['highest'] * 0.999)  # Slightly below highest
-            
-            # Place order
+                limit_price = max(price, levels['highest'] * 0.999)
             result = self.futures_api.place_order(
                 symbol=futures_symbol,
                 side=side,
@@ -378,14 +340,12 @@ class MEXCBot:
                 vol=vol,
                 price=limit_price
             )
-            
             if 'error' not in result:
                 logger.info(f"Futures order placed: {symbol} {signal_type} at {limit_price}")
                 return {"success": True, "order_id": result.get('data', 'unknown'), "price": limit_price}
             else:
                 logger.error(f"Futures order failed: {result['error']}")
                 return {"success": False, "reason": result['error']}
-                
         except Exception as e:
             logger.error(f"Error executing futures trade: {e}")
             return {"success": False, "reason": str(e)}
@@ -416,54 +376,44 @@ class MEXCBot:
             parts = message_text.strip().split()
             if not parts:
                 return "Invalid command format"
-
             command = parts[0].lower()
-            
             if command == "/add" and len(parts) == 2:
                 symbol = parts[1].upper()
                 if self.add_symbol(symbol):
                     return f"✅ Added {symbol} to watchlist"
                 else:
                     return f"⚠️ {symbol} already in watchlist"
-                    
             elif command == "/remove" and len(parts) == 2:
                 symbol = parts[1].upper()
                 if self.remove_symbol(symbol):
                     return f"✅ Removed {symbol} from watchlist"
                 else:
                     return f"⚠️ {symbol} not found in watchlist"
-                    
             elif command == "/list":
                 return self.list_symbols()
-                
             elif command == "/update" and len(parts) >= 2:
-                # Replace all symbols with new ones
                 new_symbols = [s.upper() for s in parts[1:]]
                 self.symbols = new_symbols
                 if self.save_symbols(self.symbols):
                     return f"✅ Updated watchlist with {len(new_symbols)} symbols:\n" + "\n".join([f"• {s}" for s in new_symbols])
                 else:
                     return "❌ Failed to update symbols file"
-                    
             elif command == "/stop":
                 self.running = False
                 return "🛑 Bot stopping..."
-                
             elif command == "/start":
                 self.running = True
                 return "▶️ Bot starting..."
-                
             elif command == "/interval" and len(parts) == 2:
                 try:
                     new_interval = int(parts[1])
-                    if 30 <= new_interval <= 3600:  # 30 seconds to 1 hour
+                    if 30 <= new_interval <= 3600:
                         self.scan_interval = new_interval
                         return f"✅ Scan interval set to {new_interval} seconds"
                     else:
                         return "❌ Interval must be between 30 and 3600 seconds"
                 except ValueError:
                     return "❌ Invalid interval value"
-                    
             elif command == "/help":
                 return (
                     "📋 *Available Commands:*\n"
@@ -477,7 +427,6 @@ class MEXCBot:
                     "/status - Show bot status\n"
                     "/help - Show this help"
                 )
-                
             elif command == "/status":
                 status = "🟢 Running" if self.running else "🔴 Stopped"
                 api_status = "✅ Connected" if self.futures_api else "❌ Not configured"
@@ -493,7 +442,6 @@ class MEXCBot:
                 )
             else:
                 return "❌ Unknown command. Use /help for available commands"
-                
         except Exception as e:
             logger.error(f"Error processing command: {e}")
             return f"❌ Error processing command: {str(e)}"
@@ -502,33 +450,25 @@ class MEXCBot:
         """Check for new Telegram messages and process commands"""
         if not self.telegram_token or not self.chat_id:
             return
-
         try:
             url = f"https://api.telegram.org/bot{self.telegram_token}/getUpdates"
             params = {"offset": self.last_update_id + 1, "limit": 10}
-            
             response = self.session.get(url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
-            
             if data.get("ok") and data.get("result"):
                 for update in data["result"]:
                     update_id = update.get("update_id", 0)
                     message = update.get("message", {})
-                    
-                    # Check if message is from the correct chat
                     if str(message.get("chat", {}).get("id", "")) == str(self.chat_id):
                         text = message.get("text", "")
                         if text.startswith("/"):
                             logger.info(f"Processing command: {text}")
                             response_text = self.process_telegram_command(text)
                             self.send_telegram_alert(response_text)
-                    
-                    # Update last processed update ID
                     if update_id > self.last_update_id:
                         self.last_update_id = update_id
                         self.save_last_update_id(self.last_update_id)
-                        
         except Exception as e:
             logger.error(f"Error checking Telegram updates: {e}")
 
@@ -537,14 +477,12 @@ class MEXCBot:
         if not self.telegram_token or not self.chat_id:
             logger.warning("Missing TELEGRAM_TOKEN or CHAT_ID.")
             return False
-
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
         payload = {
             "chat_id": self.chat_id,
             "text": message,
             "parse_mode": "Markdown"
         }
-
         try:
             res = self.session.post(url, data=payload, timeout=10)
             res.raise_for_status()
@@ -557,110 +495,83 @@ class MEXCBot:
     def run_single_analysis(self):
         """Run a single analysis cycle"""
         logger.info("Running EMA Crossover + RSI analysis...")
-        
-        # Check for Telegram commands first
         self.check_telegram_updates()
-        
         if not self.running:
             return
-        
         alerts = []
         trades_executed = []
-
         for symbol in self.symbols:
-            # Fetch data for both timeframes
             df_5m = self.fetch_klines(symbol, "5m", 100)
             df_15m = self.fetch_klines(symbol, "15m", 100)
-
             if df_5m is None or df_15m is None:
                 logger.warning(f"Could not fetch data for {symbol}")
                 continue
-
-            # Check signals on both timeframes
             signal_5m = self.check_ema_crossover(df_5m)
             signal_15m = self.check_ema_crossover(df_15m)
-            
-            # Get high/low levels from 15m chart
             levels_15m = self.get_high_low_levels(df_15m, 5)
-
-            # Determine if we have a valid signal
             signal_detected = None
-            
-            # Both timeframes must agree on signal direction
             if (signal_5m["signal"] == "LONG" and signal_15m["signal"] == "LONG"):
                 signal_detected = "LONG"
             elif (signal_5m["signal"] == "SHORT" and signal_15m["signal"] == "SHORT"):
                 signal_detected = "SHORT"
-            # Alternative: Allow signal if at least 5m has signal and 15m doesn't contradict
             elif signal_5m["signal"] == "LONG" and signal_15m["signal"] != "SHORT":
                 if signal_15m["rsi"] > self.rsi_long_threshold:
                     signal_detected = "LONG"
             elif signal_5m["signal"] == "SHORT" and signal_15m["signal"] != "LONG":
                 if signal_15m["rsi"] < self.rsi_short_threshold:
                     signal_detected = "SHORT"
-
             if signal_detected:
-                # Format trading information
                 message = self.format_trading_info(symbol, signal_5m, signal_15m, signal_detected, levels_15m)
                 alerts.append(message)
                 logger.info(f"{signal_detected} signal detected for {symbol}")
-                
-                # Execute futures trade if API is available
                 if self.futures_api:
                     trade_result = self.execute_futures_trade(
                         symbol, signal_detected, signal_5m['price'], levels_15m
                     )
                     trades_executed.append(f"{symbol}: {trade_result}")
-                
-                # Log detailed signal info
                 logger.info(f"{symbol} 5m - EMA5: {signal_5m['ema5']:.4f}, EMA10: {signal_5m['ema10']:.4f}, RSI: {signal_5m['rsi']:.1f}")
                 logger.info(f"{symbol} 15m - EMA5: {signal_15m['ema5']:.4f}, EMA10: {signal_15m['ema10']:.4f}, RSI: {signal_15m['rsi']:.1f}")
                 logger.info(f"{symbol} 15m Levels - High: {levels_15m['highest']:.4f}, Low: {levels_15m['lowest']:.4f}")
             else:
                 logger.info(f"No clear signal for {symbol}")
-
-        # Send alerts
         if alerts:
-            # Send each alert separately to avoid message length limits
             for alert in alerts:
                 self.send_telegram_alert(alert)
-                
-            # Send trade execution summary if trades were executed
             if trades_executed:
                 trade_summary = "🔄 *Trades Executed:*\n" + "\n".join(trades_executed)
                 self.send_telegram_alert(trade_summary)
-        
         logger.info(f"Analysis complete. {len(alerts)} signals detected, {len(trades_executed)} trades attempted.")
 
-def run_24_7(self):
-    logger.info("Starting 24/7 bot operation...")
+    def run_24_7(self):
+        logger.info("Starting 24/7 bot operation...")
+        startup_msg = (
+            "🤖 *Sig_288bot v2.0 - 24/7 Mode Started*\n"
+            "Strategy: EMA5/EMA10 Crossover + RSI Filter\n"
+            "Timeframes: 5m & 15m\n"
+            "RSI Thresholds: Long >55, Short <45\n"
+            f"Scan Interval: {self.scan_interval}s\n"
+            f"Futures API: {'✅ Active' if self.futures_api else '❌ Disabled'}\n\n"
+            f"📋 Monitoring {len(self.symbols)} symbols:\n" +
+            "\n".join([f"• {symbol}" for symbol in self.symbols]) +
+            "\n\nUse /help for commands"
+        )
+        self.send_telegram_alert(startup_msg)
+        while True:
+            try:
+                if self.running:
+                    self.run_single_analysis()
+                else:
+                    logger.info("Bot paused. Waiting for /start command...")
+                time.sleep(self.scan_interval)
+            except KeyboardInterrupt:
+                logger.info("Bot stopped by user (Ctrl+C)")
+                self.send_telegram_alert("🛑 Bot manually stopped.")
+                break
+            except Exception as e:
+                logger.error(f"Critical error in main loop: {e}")
+                self.send_telegram_alert(f"❗️Bot error: {e}")
+                time.sleep(30)
 
-    # Send startup notification
-    startup_msg = (
-        "🤖 *Sig_288bot v2.0 - 24/7 Mode Started*\n"
-        "Strategy: EMA5/EMA10 Crossover + RSI Filter\n"
-        "Timeframes: 5m & 15m\n"
-        "RSI Thresholds: Long >55, Short <45\n"
-        f"Scan Interval: {self.scan_interval}s\n"
-        f"Futures API: {'✅ Active' if self.futures_api else '❌ Disabled'}\n\n"
-        f"📋 Monitoring {len(self.symbols)} symbols:\n" +
-        "\n".join([f"• {symbol}" for symbol in self.symbols]) +
-        "\n\nUse /help for commands"
-    )
-    self.send_telegram_alert(startup_msg)
-
-    while True:
-        try:
-            if self.running:
-                self.run_single_analysis()
-            else:
-                logger.info("Bot paused. Waiting for /start command...")
-            time.sleep(self.scan_interval)
-        except KeyboardInterrupt:
-            logger.info("Bot stopped by user (Ctrl+C)")
-            self.send_telegram_alert("🛑 Bot manually stopped.")
-            break
-        except Exception as e:
-            logger.error(f"Critical error in main loop: {e}")
-            self.send_telegram_alert(f"❗️Bot error: {e}")
-            time.sleep(30)
+if __name__ == "__main__":
+    bot = MEXCBot()
+    bot.run_24_7()
