@@ -632,19 +632,35 @@ class MEXCBot:
         
         logger.info(f"Analysis complete. {len(alerts)} signals detected, {len(trades_executed)} trades attempted.")
 
-    def run_24_7(self):
-        """Run bot in 24/7 mode"""
-        logger.info("Starting 24/7 bot operation...")
-        
-        # Send startup notification
-        startup_msg = (
-            "🤖 *Sig_288bot v2.0 - 24/7 Mode Started*\n"
-            "Strategy: EMA5/EMA10 Crossover + RSI Filter\n"
-            "Timeframes: 5m & 15m\n"
-            "RSI Thresholds: Long >55, Short <45\n"
-            f"Scan Interval: {self.scan_interval}s\n"
-            f"Futures API: {'✅ Active' if self.futures_api else '❌ Disabled'}\n\n"
-            f"📋 Monitoring {len(self.symbols)} symbols:\n" +
-            "\n".join([f"• {symbol}" for symbol in self.symbols]) +
-            "\n\nUse /help for commands"
-        )
+def run_24_7(self):
+    logger.info("Starting 24/7 bot operation...")
+
+    # Send startup notification
+    startup_msg = (
+        "🤖 *Sig_288bot v2.0 - 24/7 Mode Started*\n"
+        "Strategy: EMA5/EMA10 Crossover + RSI Filter\n"
+        "Timeframes: 5m & 15m\n"
+        "RSI Thresholds: Long >55, Short <45\n"
+        f"Scan Interval: {self.scan_interval}s\n"
+        f"Futures API: {'✅ Active' if self.futures_api else '❌ Disabled'}\n\n"
+        f"📋 Monitoring {len(self.symbols)} symbols:\n" +
+        "\n".join([f"• {symbol}" for symbol in self.symbols]) +
+        "\n\nUse /help for commands"
+    )
+    self.send_telegram_alert(startup_msg)
+
+    while True:
+        try:
+            if self.running:
+                self.run_single_analysis()
+            else:
+                logger.info("Bot paused. Waiting for /start command...")
+            time.sleep(self.scan_interval)
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user (Ctrl+C)")
+            self.send_telegram_alert("🛑 Bot manually stopped.")
+            break
+        except Exception as e:
+            logger.error(f"Critical error in main loop: {e}")
+            self.send_telegram_alert(f"❗️Bot error: {e}")
+            time.sleep(30)
