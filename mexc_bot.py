@@ -129,7 +129,7 @@ class MEXCBot:
         self.rsi_long_threshold = 55
         self.rsi_short_threshold = 45
         # 24/7 operation settings
-        self.scan_interval = 60  # seconds between scans
+        self.scan_interval = 5  # seconds between scans
         self.running = True
         # Telegram credentials
         self.telegram_token = os.getenv("TELEGRAM_TOKEN")
@@ -152,7 +152,7 @@ class MEXCBot:
 
     def load_symbols(self) -> List[str]:
         """Load symbols from symbols.txt file"""
-        default_symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "THEUSDT", "XRPUSDT", "SUIUSDT","CHESSUSDT","OGUSDT","MASKUSDT","EDUUSDT","SHIBUSDT"]
+        default_symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "THEUSDT", "XRPUSDT", "SUIUSDT","CHESSUSDT","OGUSDT","MASKUSDT","EDUUSDT","SHIBUSDT","TRUMPUSDT","FUNUSDT","HYPEUSDT","LDOUSDT","FETUSDT","EIGENUSDT","TOKENUSDT","ZKUSDT","JASMYUSDT","ADAUSDT","OMUSDT","LTCUSDT","APTUSDT"]
         try:
             if os.path.exists(self.symbols_file):
                 with open(self.symbols_file, 'r') as f:
