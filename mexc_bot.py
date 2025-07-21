@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class MEXCBot:
     def __init__(self):
-        self.symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "THEUSDT", "XRPUSDT", "SUIUSDT","TRBUSDT","CHESSUSDT","OGUSDT","MASKUSDT","EDUUSDT","SHIBUSDT"]
+        self.symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "THEUSDT", "XRPUSDT", "SUIUSDT","CHESSUSDT","OGUSDT","MASKUSDT","EDUUSDT","SHIBUSDT"]
         self.ema_period = 20
         self.base_url = "https://api.mexc.com"
 
