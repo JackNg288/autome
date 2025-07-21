@@ -6,7 +6,7 @@ SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 EMA_PERIOD = 20
 BASE_URL = "https://api.mexc.com"
 TELEGRAM_TOKEN = "7596862485:AAGNlV893IdMVRVhx07UZjgZf51fKefUNAg"
-CHAT_ID = "7596862485"
+CHAT_ID = "1465742044"
 
 # === FUNCTIONS ===
 def fetch_klines(symbol, interval, limit=50):
