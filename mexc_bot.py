@@ -37,8 +37,8 @@ def send_alert(message):
 messages = []
 for symbol in SYMBOLS:
     try:
-        one = fetch_klines(symbol, "1h")
-        four = fetch_klines(symbol, "4h")
+        one = fetch_klines(symbol, "1H")
+        four = fetch_klines(symbol, "4H")
         if check_signal(one) and check_signal(four):
             messages.append(f"🚀 BUY SIGNAL: {symbol}")
     except Exception as e:
