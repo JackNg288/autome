@@ -37,62 +37,45 @@ class MEXCBot:
             'User-Agent': 'MEXC-Bot/1.0'
         })
     
-    def fetch_klines(self, symbol: str, interval: str, limit: int = 50) -> Optional[pd.DataFrame]:
-        """
-        Fetch kline/candlestick data from MEXC API.
-        
-        Args:
-            symbol: Trading pair symbol (e.g., 'BTCUSDT')
-            interval: Time interval ('1m', '5m', '1H', '4H', '1D', etc.)
-            limit: Number of klines to retrieve (max 1000)
-        
-        Returns:
-            DataFrame with kline data or None if error
-        """
-        url = f"{self.base_url}/api/v3/klines"
-        params = {
-            "symbol": symbol,
-            "interval": interval,
-            "limit": limit
-        }
-        
-        try:
-            logger.debug(f"Fetching {interval} klines for {symbol}")
-            response = self.session.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            if not data:
-                logger.warning(f"No data returned for {symbol} {interval}")
-                return None
-            
-            # Create DataFrame with proper column names
-            df = pd.DataFrame(data, columns=[
-                "timestamp", "open", "high", "low", "close", "volume",
-                "close_time", "quote_volume", "trades", "buy_base_volume", 
-                "buy_quote_volume", "ignore"
-            ])
-            
-            # Convert to numeric types
-            numeric_cols = ["open", "high", "low", "close", "volume", "quote_volume"]
-            for col in numeric_cols:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            
-            # Convert timestamp to datetime for easier handling
-            df["datetime"] = pd.to_datetime(df["timestamp"], unit='ms')
-            
-            logger.debug(f"Successfully fetched {len(df)} klines for {symbol} {interval}")
-            return df
-            
-        except requests.exceptions.Timeout:
-            logger.error(f"Timeout fetching klines for {symbol} {interval}")
+def fetch_klines(self, symbol: str, interval: str, limit: int = 50) -> Optional[pd.DataFrame]:
+    """
+    Fetch candlestick (kline) data for a given symbol and interval.
+    """
+    url = f"{self.base_url}/api/v3/klines"
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "limit": limit
+    }
+
+    try:
+        logger.debug(f"Fetching klines: {url} with {params}")
+        response = self.session.get(url, params=params, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+        if not isinstance(data, list) or len(data) == 0:
+            logger.warning(f"No kline data returned for {symbol} {interval}")
             return None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error fetching klines for {symbol} {interval}: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error fetching klines for {symbol} {interval}: {e}")
-            return None
+
+        df = pd.DataFrame(data, columns=[
+            "timestamp", "open", "high", "low", "close", "volume",
+            "close_time", "quote_volume", "num_trades",
+            "taker_buy_base", "taker_buy_quote", "ignore"
+        ])
+
+        # Convert types
+        df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].apply(pd.to_numeric)
+        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+        return df
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"RequestException while fetching klines for {symbol} {interval}: {e}")
+        logger.debug(f"Status: {getattr(e.response, 'status_code', 'No status')}, Body: {getattr(e.response, 'text', 'No body')}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error in fetch_klines for {symbol} {interval}: {e}")
+        return None
     
     def check_signal(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -190,8 +173,8 @@ class MEXCBot:
                 logger.info(f"Analyzing {symbol}")
                 
                 # Fetch 1H and 4H data
-                df_1h = self.fetch_klines(symbol, "1h")
-                df_4h = self.fetch_klines(symbol, "4h")
+                df_1h = self.fetch_klines(symbol, "60m")
+                df_4h = self.fetch_klines(symbol, "240m")
                 
                 if df_1h is None or df_4h is None:
                     messages.append(f"⚠️ Error: Could not fetch data for {symbol}")
