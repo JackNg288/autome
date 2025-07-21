@@ -648,4 +648,3 @@ class MEXCBot:
             "\n".join([f"• {symbol}" for symbol in self.symbols]) +
             "\n\nUse /help for commands"
         )
-        self.
