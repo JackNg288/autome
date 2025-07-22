@@ -10,11 +10,13 @@ Features:
 - MEXC Futures API integration
 - Dynamic symbol management via Telegram
 """
-
 import requests
 import pandas as pd
 import numpy as np
 import os
+import os
+from dotenv import load_dotenv
+load_dotenv()
 import logging
 import time
 import hmac
@@ -24,8 +26,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 import threading
 from urllib.parse import urlencode
-from dotenv import load_dotenv
-load_dotenv()
+
 
 # Setup logging
 logging.basicConfig(
@@ -41,9 +42,6 @@ logger = logging.getLogger(__name__)
 class MEXCFuturesAPI:
     """MEXC Futures API Client"""
     def __init__(self, api_key: str, api_secret: str, testnet: bool = False):
-        self.mexc_api_key = os.getenv("MEXC_API_KEY")
-        self.mexc_api_secret = os.getenv("MEXC_API_SECRET")
-        self.mexc_testnet = os.getenv("MEXC_TESTNET", "true").lower() == "true"
         self.api_key = api_key
         self.api_secret = api_secret
         self.base_url = "https://contract.mexc.com" if not testnet else "https://contract-test.mexc.com"
@@ -145,12 +143,11 @@ class MEXCBot:
         self.mexc_api_key = os.getenv("MEXC_API_KEY")
         self.mexc_api_secret = os.getenv("MEXC_API_SECRET")
         self.mexc_testnet = os.getenv("MEXC_TESTNET", "true").lower() == "true"
-        # Initialize APIs
-        self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'Sig_288bot/2.0'})
+        print("DEBUG - API KEY:", self.mexc_api_key)
+        print("DEBUG - API SECRET:", self.mexc_api_secret)
+        print("DEBUG - TESTNET:", self.mexc_testnet)
         if self.mexc_api_key and self.mexc_api_secret:
             self.futures_api = MEXCFuturesAPI(self.mexc_api_key, self.mexc_api_secret, self.mexc_testnet)
-            logger.info(f"MEXC Futures API initialized (testnet: {self.mexc_testnet})")
         else:
             self.futures_api = None
             logger.warning("MEXC API credentials not found - trading disabled")
