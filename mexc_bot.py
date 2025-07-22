@@ -24,6 +24,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 import threading
 from urllib.parse import urlencode
+from dotenv import load_dotenv
+load_dotenv()
 
 # Setup logging
 logging.basicConfig(
@@ -39,6 +41,9 @@ logger = logging.getLogger(__name__)
 class MEXCFuturesAPI:
     """MEXC Futures API Client"""
     def __init__(self, api_key: str, api_secret: str, testnet: bool = False):
+        self.mexc_api_key = os.getenv("MEXC_API_KEY")
+        self.mexc_api_secret = os.getenv("MEXC_API_SECRET")
+        self.mexc_testnet = os.getenv("MEXC_TESTNET", "true").lower() == "true"
         self.api_key = api_key
         self.api_secret = api_secret
         self.base_url = "https://contract.mexc.com" if not testnet else "https://contract-test.mexc.com"
@@ -47,7 +52,9 @@ class MEXCFuturesAPI:
             'User-Agent': 'Sig_288bot/2.0',
             'Content-Type': 'application/json'
         })
-
+    print("DEBUG - API KEY:", os.getenv("MEXC_API_KEY"))
+    print("DEBUG - API SECRET:", os.getenv("MEXC_API_SECRET"))
+    print("DEBUG - TESTNET:", os.getenv("MEXC_TESTNET"))
     def _generate_signature(self, query_string: str) -> str:
         """Generate HMAC SHA256 signature"""
         return hmac.new(
