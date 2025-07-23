@@ -123,6 +123,8 @@ class MEXCFuturesAPI:
 
 class MEXCBot:
     def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({'User-Agent': 'Sig_288bot/2.0'})
         self.symbols_file = "symbols.txt"
         self.symbols = self.load_symbols()
         self.base_url = "https://api.mexc.com"
@@ -153,7 +155,7 @@ class MEXCBot:
             logger.warning("MEXC API credentials not found - trading disabled")
         # Track last processed update to avoid duplicates
         self.last_update_id = self.load_last_update_id()
-
+        
     def load_symbols(self) -> List[str]:
         """Load symbols from symbols.txt file"""
         default_symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "THEUSDT", "XRPUSDT", "SUIUSDT","CHESSUSDT","OGUSDT","MASKUSDT","EDUUSDT","SHIBUSDT","TRUMPUSDT","FUNUSDT","HYPEUSDT","LDOUSDT","FETUSDT","EIGENUSDT","TOKENUSDT","ZKUSDT","JASMYUSDT","ADAUSDT","OMUSDT","LTCUSDT","APTUSDT"]
