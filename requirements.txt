@@ -4,4 +4,3 @@ numpy
 python-dotenv
 scikit-learn
 openai
-TA-Lib
