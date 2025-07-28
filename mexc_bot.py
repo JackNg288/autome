@@ -193,11 +193,7 @@ class EnhancedMEXCBot:
             logger.error(f"Error saving last update ID: {e}")
 
     def fetch_klines(self, symbol: str, interval: str, limit: int = 200) -> Optional[pd.DataFrame]:
-    """
-    Fixed MEXC API endpoint for kline data
-    Updated for 2025 MEXC API structure
-    """
-    try:
+        try:
         # MEXC has multiple API endpoints - try both spot and futures
         endpoints_to_try = [
             # Spot API (primary)
