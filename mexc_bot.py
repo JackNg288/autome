@@ -192,37 +192,38 @@ class EnhancedMEXCBot:
         except Exception as e:
             logger.error(f"Error saving last update ID: {e}")
 
-    def fetch_klines(self, symbol: str, interval: str, limit: int = 200) -> Optional[pd.DataFrame]:
-        """Fetch kline data from MEXC Futures (contract) endpoint"""
-        try:
-            # Format symbol for futures (e.g., BTC_USDT)
-            formatted_symbol = symbol.replace("USDT", "_USDT")
+def fetch_klines(self, symbol: str, interval: str, limit: int = 200) -> Optional[pd.DataFrame]:
+    """Fetch kline data from MEXC Futures (contract) endpoint"""
+    try:
+        # Correctly format symbol for futures (e.g., BTC_USDT)
+        formatted_symbol = symbol[:-4] + "_USDT"
 
-            url = f"{self.base_url}/api/v1/contract/kline/{formatted_symbol}"
-            params = {"interval": interval, "limit": limit}
+        url = f"{self.base_url}/api/v1/contract/kline/{formatted_symbol}"
+        params = {"interval": interval, "limit": limit}
 
-            response = self.session.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
+        response = self.session.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
 
-            if "data" not in data or not data["data"]:
-                logger.warning(f"No kline data for {symbol} ({interval})")
-                return None
-
-            df = pd.DataFrame(data["data"], columns=[
-                "timestamp", "open", "high", "low", "close", "volume", "value"
-            ])
-
-            df[["open", "high", "low", "close", "volume"]] = df[
-                ["open", "high", "low", "close", "volume"]
-            ].apply(pd.to_numeric)
-
-            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-            return df.sort_values("timestamp").reset_index(drop=True)
-
-        except Exception as e:
-            logger.error(f"Error fetching futures klines for {symbol} ({interval}): {e}")
+        if "data" not in data or not data["data"]:
+            logger.warning(f"No kline data for {symbol} ({interval})")
             return None
+
+        df = pd.DataFrame(data["data"], columns=[
+            "timestamp", "open", "high", "low", "close", "volume", "value"
+        ])
+
+        df[["open", "high", "low", "close", "volume"]] = df[
+            ["open", "high", "low", "close", "volume"]
+        ].apply(pd.to_numeric)
+
+        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+        return df.sort_values("timestamp").reset_index(drop=True)
+
+    except Exception as e:
+        logger.error(f"Error fetching futures klines for {symbol} ({interval}): {e}")
+        return None
+
 
     def calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Calculate RSI indicator"""
