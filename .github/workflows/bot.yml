@@ -1,88 +1,29 @@
-name: Enhanced MEXC Bot - Reliable (No TA-Lib)
+name: MEXC Bot - Minimal & Reliable
 
 on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger
 
 jobs:
-  trading-bot:
+  run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v4
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-          
-    - name: Install Python dependencies (guaranteed to work)
+    - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip setuptools wheel
+        pip install requests pandas numpy python-dotenv scikit-learn
+        echo "✅ Dependencies installed"
         
-        # Install core dependencies that always work
-        pip install \
-          requests>=2.28.0 \
-          pandas>=1.5.0 \
-          numpy>=1.21.0 \
-          python-dotenv>=0.19.0 \
-          scikit-learn>=1.1.0 \
-          scipy>=1.9.0 \
-          urllib3>=1.26.0 \
-          certifi>=2022.0.0
-          
-        echo "✅ All dependencies installed successfully"
-        
-    - name: Verify installation
-      run: |
-        echo "🔍 Verifying installation..."
-        python -c "
-        import pandas as pd
-        import numpy as np
-        import requests
-        import sklearn
-        print('✅ Pandas version:', pd.__version__)
-        print('✅ NumPy version:', np.__version__)
-        print('✅ Requests version:', requests.__version__)
-        print('✅ Scikit-learn version:', sklearn.__version__)
-        print('⚠️  TA-Lib: Not installed (using enhanced fallbacks)')
-        print('📊 Bot will run with 65-75% accuracy (still excellent!)')
-        "
-        
-    - name: Run Enhanced MEXC Bot
+    - name: Run bot
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        # Tell the bot TA-Lib is not available
-        TALIB_AVAILABLE: "false"
       run: |
-        echo "🚀 Starting Enhanced MEXC Bot without TA-Lib..."
-        echo "📊 Using advanced fallback indicators for reliable performance"
-        
-        # Run with timeout to prevent infinite runs
-        timeout 25m python enhanced_mexc_bot.py || {
-          echo "⏰ Bot completed or reached timeout"
-          exit 0
-        }
-        
-    - name: Upload logs (if available)
-      if: always()
-      uses: actions/upload-artifact@v3
-      with:
-        name: bot-logs
-        path: |
-          mexc_bot.log
-          *.txt
-          *.json
-        retention-days: 7
+        echo "🚀 Starting bot..."
+        python mexc_bot.py
