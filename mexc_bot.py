@@ -1559,26 +1559,21 @@ Happy trading! 🚀
 """)
 
 if __name__ == "__main__":
-    # Print setup instructions
     print_setup_instructions()
-    
     try:
-        # Initialize and start bot
         bot = EnhancedMEXCBot()
-        
-        # Optional: Train ML model with historical data
-        if input("Train ML model with historical data? (y/n): ").lower() == 'y':
+
+        # AUTO-TRAIN: change to True if you want to train
+        auto_train = False
+        if auto_train:
             train_ml_model_from_historical_data(bot, bot.symbols[:5], days_back=30)
-        
-        # Start 24/7 operation
+
         bot.run_24_7()
-        
     except KeyboardInterrupt:
         print("\n🛑 Bot stopped by user")
     except Exception as e:
         print(f"❌ Critical error: {e}")
         logger.error(f"Critical startup error: {e}")
-
 """
 📊 CHANGELOG - Enhanced MEXC Bot v3.0
 
