@@ -1625,7 +1625,6 @@ def print_setup_instructions():
 Happy trading! 🚀
 """)
 
-
 if __name__ == "__main__":
     print_setup_instructions()
     try:
