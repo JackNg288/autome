@@ -193,36 +193,236 @@ class EnhancedMEXCBot:
             logger.error(f"Error saving last update ID: {e}")
 
     def fetch_klines(self, symbol: str, interval: str, limit: int = 200) -> Optional[pd.DataFrame]:
-        """Fetch kline data from MEXC Futures (contract) endpoint"""
-        try:
-            # Format symbol for futures (e.g., BTC_USDT)
-            formatted_symbol = symbol.replace("USDT", "_USDT")
+    """
+    Fixed MEXC API endpoint for kline data
+    Updated for 2025 MEXC API structure
+    """
+    try:
+        # MEXC has multiple API endpoints - try both spot and futures
+        endpoints_to_try = [
+            # Spot API (primary)
+            {
+                "url": "https://api.mexc.com/api/v3/klines",
+                "symbol_format": symbol,  # BTCUSDT format
+                "interval_map": {
+                    "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
+                    "1h": "1h", "4h": "4h", "1d": "1d"
+                }
+            },
+            # Futures API (backup)
+            {
+                "url": "https://contract.mexc.com/api/v1/contract/kline",
+                "symbol_format": symbol.replace("USDT", "_USDT"),  # BTC_USDT format
+                "interval_map": {
+                    "1m": "Min1", "5m": "Min5", "15m": "Min15", "30m": "Min30",
+                    "1h": "Min60", "4h": "Hour4", "1d": "Day1"
+                }
+            }
+        ]
+        
+        for endpoint_config in endpoints_to_try:
+            try:
+                url = endpoint_config["url"]
+                formatted_symbol = endpoint_config["symbol_format"]
+                interval_map = endpoint_config["interval_map"]
+                
+                # Map interval to MEXC format
+                mexc_interval = interval_map.get(interval, interval)
+                
+                if "api.mexc.com" in url:
+                    # Spot API parameters
+                    params = {
+                        "symbol": formatted_symbol,
+                        "interval": mexc_interval,
+                        "limit": min(limit, 1000)  # MEXC limit
+                    }
+                else:
+                    # Futures API parameters
+                    params = {
+                        "symbol": formatted_symbol,
+                        "interval": mexc_interval,
+                        "limit": min(limit, 2000)
+                    }
+                
+                logger.debug(f"Trying {url} with symbol={formatted_symbol}, interval={mexc_interval}")
+                
+                response = self.session.get(url, params=params, timeout=15)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Handle different response formats
+                if "api.mexc.com" in url:
+                    # Spot API response format
+                    if isinstance(data, list) and len(data) > 0:
+                        df = pd.DataFrame(data, columns=[
+                            "timestamp", "open", "high", "low", "close", "volume",
+                            "close_time", "quote_volume", "trades", "taker_buy_base",
+                            "taker_buy_quote", "ignore"
+                        ])
+                        
+                        # Convert to numeric
+                        df[["open", "high", "low", "close", "volume"]] = df[
+                            ["open", "high", "low", "close", "volume"]
+                        ].apply(pd.to_numeric, errors='coerce')
+                        
+                        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+                        df = df.sort_values("timestamp").reset_index(drop=True)
+                        
+                        logger.info(f"✅ Fetched {len(df)} candles for {symbol} ({interval}) via Spot API")
+                        return df
+                        
+                else:
+                    # Futures API response format
+                    if "data" in data and data["data"]:
+                        df = pd.DataFrame(data["data"], columns=[
+                            "timestamp", "open", "high", "low", "close", "volume", "value"
+                        ])
+                        
+                        df[["open", "high", "low", "close", "volume"]] = df[
+                            ["open", "high", "low", "close", "volume"]
+                        ].apply(pd.to_numeric, errors='coerce')
+                        
+                        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+                        df = df.sort_values("timestamp").reset_index(drop=True)
+                        
+                        logger.info(f"✅ Fetched {len(df)} candles for {symbol} ({interval}) via Futures API")
+                        return df
+                
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"API endpoint {url} failed: {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"Error processing response from {url}: {e}")
+                continue
+        
+        # If all endpoints fail, try alternative exchanges
+        logger.warning(f"All MEXC endpoints failed for {symbol}, trying Binance as fallback...")
+        return self.fetch_binance_fallback(symbol, interval, limit)
+        
+    except Exception as e:
+        logger.error(f"Critical error fetching klines for {symbol} ({interval}): {e}")
+        return None
 
-            url = f"{self.base_url}/api/v1/contract/kline/{formatted_symbol}"
-            params = {"interval": interval, "limit": limit}
-
-            response = self.session.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-
-            if "data" not in data or not data["data"]:
-                logger.warning(f"No kline data for {symbol} ({interval})")
-                return None
-
-            df = pd.DataFrame(data["data"], columns=[
-                "timestamp", "open", "high", "low", "close", "volume", "value"
-            ])
-
-            df[["open", "high", "low", "close", "volume"]] = df[
-                ["open", "high", "low", "close", "volume"]
-            ].apply(pd.to_numeric)
-
-            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-            return df.sort_values("timestamp").reset_index(drop=True)
-
-        except Exception as e:
-            logger.error(f"Error fetching futures klines for {symbol} ({interval}): {e}")
+def fetch_binance_fallback(self, symbol: str, interval: str, limit: int = 200) -> Optional[pd.DataFrame]:
+    """
+    Fallback to Binance API if MEXC fails
+    Binance has reliable, free kline data
+    """
+    try:
+        url = "https://api.binance.com/api/v3/klines"
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": min(limit, 1000)
+        }
+        
+        response = self.session.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data:
             return None
+            
+        df = pd.DataFrame(data, columns=[
+            "timestamp", "open", "high", "low", "close", "volume",
+            "close_time", "quote_volume", "trades", "taker_buy_base",
+            "taker_buy_quote", "ignore"
+        ])
+        
+        # Convert to numeric
+        df[["open", "high", "low", "close", "volume"]] = df[
+            ["open", "high", "low", "close", "volume"]
+        ].apply(pd.to_numeric, errors='coerce')
+        
+        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        
+        logger.info(f"✅ Fetched {len(df)} candles for {symbol} ({interval}) via Binance fallback")
+        return df
+        
+    except Exception as e:
+        logger.error(f"Binance fallback also failed for {symbol}: {e}")
+        return None
+
+# Add this method to test API connectivity
+def test_api_connectivity(self):
+    """Test MEXC API connectivity and find working endpoints"""
+    test_symbol = "BTCUSDT"
+    test_intervals = ["5m", "15m", "1h"]
+    
+    logger.info("🔍 Testing MEXC API connectivity...")
+    
+    working_endpoints = []
+    
+    # Test MEXC Spot API
+    try:
+        url = "https://api.mexc.com/api/v3/klines"
+        params = {"symbol": test_symbol, "interval": "5m", "limit": 10}
+        response = self.session.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200 and response.json():
+            working_endpoints.append("MEXC Spot API")
+            logger.info("✅ MEXC Spot API working")
+        else:
+            logger.warning(f"❌ MEXC Spot API returned {response.status_code}")
+            
+    except Exception as e:
+        logger.warning(f"❌ MEXC Spot API failed: {e}")
+    
+    # Test MEXC Futures API
+    try:
+        url = "https://contract.mexc.com/api/v1/contract/kline/BTC_USDT"
+        params = {"interval": "Min5", "limit": 10}
+        response = self.session.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("data"):
+                working_endpoints.append("MEXC Futures API")
+                logger.info("✅ MEXC Futures API working")
+            else:
+                logger.warning("❌ MEXC Futures API returned empty data")
+        else:
+            logger.warning(f"❌ MEXC Futures API returned {response.status_code}")
+            
+    except Exception as e:
+        logger.warning(f"❌ MEXC Futures API failed: {e}")
+    
+    # Test Binance fallback
+    try:
+        url = "https://api.binance.com/api/v3/klines"
+        params = {"symbol": test_symbol, "interval": "5m", "limit": 10}
+        response = self.session.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200 and response.json():
+            working_endpoints.append("Binance Fallback")
+            logger.info("✅ Binance fallback working")
+        else:
+            logger.warning(f"❌ Binance fallback returned {response.status_code}")
+            
+    except Exception as e:
+        logger.warning(f"❌ Binance fallback failed: {e}")
+    
+    # Send status to Telegram
+    if working_endpoints:
+        status_msg = (
+            f"🔗 *API Connectivity Test Results*\n\n"
+            f"✅ *Working APIs:*\n" +
+            "\n".join([f"• {api}" for api in working_endpoints]) +
+            f"\n\n📊 Bot will use the first available API for data fetching."
+        )
+    else:
+        status_msg = (
+            "❌ *API Connectivity Test Failed*\n\n"
+            "All tested APIs are currently unavailable:\n"
+            "• MEXC Spot API\n"
+            "• MEXC Futures API\n"
+            "• Binance Fallback\n\n"
+            "⚠️ Bot will retry periodically."
+        )
+    
+    self.send_telegram_alert(status_msg)
+    return len(working_endpoints) > 0
 
     def calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Calculate RSI indicator"""
