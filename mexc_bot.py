@@ -1229,7 +1229,7 @@ class UltimateMEXCBot:
                 # Test in order: Binance → Bybit → Coinbase → MEXC
                 df = self._fetch_binance_working(symbol, "5m", 10)
                 if df is not None and len(df) >= 5:
-                working_api = "binance"
+                    working_api = "binance"
                 else:
                     df = self._fetch_bybit_working(symbol, "5m", 10)
                     if df is not None and len(df) >= 5:
