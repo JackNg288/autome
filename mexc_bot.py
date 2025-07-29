@@ -124,9 +124,10 @@ class RobustAPIHandler:
         self.failed_symbols = set()
         self.symbol_cache = {}
         self.rate_limit_delays = {
-            "binance": 0.1,     # 10 requests per second
-            "bybit": 0.2,       # 5 requests per second  
-            "coinbase": 0.15    # 7 requests per second
+            "binance": 0.15,     # 10 requests per second
+            "bybit": 0.1,       # 5 requests per second  
+            "coinbase": 0.2    # 7 requests per second
+            "mexc": 0.3    # 7 requests per second
         }
         
     def is_rate_limited(self, api_key: str) -> bool:
@@ -275,12 +276,12 @@ class UltimateMEXCBot:
             return None
         
         try:
-            # Try Binance first (most reliable in 2025)
+            # Try Bybit first (most reliable in 2025)
             df = self._fetch_bybit_working(symbol, interval, limit)
             if df is not None:
                 return df
                 
-            # Try Bybit as fallback
+            # Try Binance as fallback
             df = self._fetch_binance_working(symbol, interval, limit)
             if df is not None:
                 return df
@@ -289,7 +290,11 @@ class UltimateMEXCBot:
             df = self._fetch_coinbase_working(symbol, interval, limit)
             if df is not None:
                 return df
-                
+
+            df = self._fetch_mexc_last_resort(symbol, interval, limit)
+            if df is not None:
+                return df
+            
             # Mark as failed
             self.failed_symbols.add(symbol)
             logger.debug(f"All working APIs failed for {symbol}")
@@ -454,8 +459,7 @@ class UltimateMEXCBot:
             data = response.json()
             
             if not isinstance(data, list) or len(data) == 0:
-                return None
-            
+                return None            
             # Convert Coinbase format to standard format
             df_data = []
             for candle in data[:limit]:
@@ -487,6 +491,71 @@ class UltimateMEXCBot:
         except Exception as e:
             logger.debug(f"Coinbase failed for {symbol}: {e}")
             return None
+    
+    def _fetch_mexc_last_resort(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
+    """MEXC API as last resort with enhanced error handling"""
+    try:
+        # Rate limiting (MEXC is more restrictive)
+        time.sleep(0.3)
+        
+        url = "https://api.mexc.com/api/v3/klines"
+        params = {"symbol": symbol, "interval": interval, "limit": min(limit, 1000)}
+        
+        response = self.session.get(url, params=params, timeout=15)
+        
+        # Handle MEXC-specific error codes
+        if response.status_code == 400:
+            try:
+                error_data = response.json()
+                if error_data.get('code') == 10007:
+                    logger.debug(f"MEXC: {symbol} not supported via API (Assessment Zone)")
+                    return None
+                elif error_data.get('code') == -1121:
+                    logger.debug(f"MEXC: Invalid symbol {symbol}")
+                    return None
+            except:
+                pass
+            return None
+        elif response.status_code in [404, 451]:
+            return None
+        elif response.status_code == 429:
+            time.sleep(3)  # MEXC rate limit is stricter
+            return None
+            
+        response.raise_for_status()
+        data = response.json()
+        
+        if not isinstance(data, list) or len(data) == 0:
+            return None
+        
+        # Convert MEXC format to standard format
+        df = pd.DataFrame(data)
+        if len(df.columns) >= 8:
+            df = df.iloc[:, :8]
+            df.columns = [
+                "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
+            ]
+        else:
+            return None
+        
+        # Convert to numeric
+        numeric_cols = ["open", "high", "low", "close", "volume"]
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        
+        if len(df) < 10:
+            return None
+            
+        logger.debug(f"✅ MEXC (Last Resort): {len(df)} candles for {symbol}")
+        return df
+        
+    except Exception as e:
+        logger.debug(f"MEXC last resort failed for {symbol}: {e}")
+        return None
+
 
     def calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Enhanced RSI calculation"""
@@ -1144,47 +1213,76 @@ class UltimateMEXCBot:
         return message
 
     def filter_working_symbols(self) -> List[str]:
-        """Filter symbols to only include those that work across working APIs"""
-        working_symbols = []
-        failed_count = 0
-        
-        logger.info("🔍 Testing symbols across working API endpoints...")
-        
-        for symbol in self.symbols:
-            try:
-                # Quick test with small limit
-                df = self.fetch_klines(symbol, "5m", 10)
-                if df is not None and len(df) >= 5:
-                    working_symbols.append(symbol)
-                    logger.info(f"✅ {symbol} - Working")
-                else:
-                    failed_count += 1
-                    logger.warning(f"❌ {symbol} - Failed")
-                    
-            except Exception as e:
-                failed_count += 1
-                logger.warning(f"❌ {symbol} - Error: {e}")
-                
-            time.sleep(0.2)  # Rate limiting
-        
-        logger.info(f"📊 API test complete: {len(working_symbols)} working, {failed_count} failed")
-        
-        if working_symbols:
-            self.symbols = working_symbols
-            self.save_symbols(working_symbols)
+    """Filter symbols with 4-tier API reporting"""
+    working_symbols = []
+    failed_count = 0
+    api_usage_stats = {"binance": 0, "bybit": 0, "coinbase": 0, "mexc": 0, "failed": 0}
+    
+    logger.info("🔍 Testing symbols across 4-tier API system...")
+    
+    for symbol in self.symbols:
+        try:
+            # Track which API actually worked
+            df = None
+            working_api = None
             
-            status_msg = (
-                f"📊 *Ultimate Bot 2025 - API Compatibility Test*\n\n"
-                f"✅ Working symbols: {len(working_symbols)}\n"
-                f"❌ Failed symbols: {failed_count}\n\n"
-                f"*Updated watchlist:*\n" +
-                "\n".join([f"• {s}" for s in working_symbols[:15]]) +
-                (f"\n• ... and {len(working_symbols)-15} more" if len(working_symbols) > 15 else "") +
-                "\n\n🔥 *2025 Fixed APIs:* Binance → Bybit → Coinbase"
-            )
-            self.send_telegram_alert(status_msg)
+            # Test in order: Binance → Bybit → Coinbase → MEXC
+            df = self._fetch_binance_working(symbol, "5m", 10)
+            if df is not None and len(df) >= 5:
+                working_api = "binance"
+            else:
+                df = self._fetch_bybit_working(symbol, "5m", 10)
+                if df is not None and len(df) >= 5:
+                    working_api = "bybit"
+                else:
+                    df = self._fetch_coinbase_working(symbol, "5m", 10)
+                    if df is not None and len(df) >= 5:
+                        working_api = "coinbase"
+                    else:
+                        df = self._fetch_mexc_last_resort(symbol, "5m", 10)
+                        if df is not None and len(df) >= 5:
+                            working_api = "mexc"
+            
+            if working_api:
+                working_symbols.append(symbol)
+                api_usage_stats[working_api] += 1
+                logger.info(f"✅ {symbol} - Working ({working_api.upper()})")
+            else:
+                failed_count += 1
+                api_usage_stats["failed"] += 1
+                logger.warning(f"❌ {symbol} - Failed (all 4 APIs)")
+                
+        except Exception as e:
+            failed_count += 1
+            api_usage_stats["failed"] += 1
+            logger.warning(f"❌ {symbol} - Error: {e}")
+            
+        time.sleep(0.2)  # Rate limiting
+    
+    logger.info(f"📊 4-Tier API test complete: {len(working_symbols)} working, {failed_count} failed")
+    
+    if working_symbols:
+        self.symbols = working_symbols
+        self.save_symbols(working_symbols)
         
-        return working_symbols
+        status_msg = (
+            f"📊 *Ultimate Bot - 4-Tier API Test Results*\n\n"
+            f"✅ Total Working: {len(working_symbols)}\n"
+            f"❌ Total Failed: {failed_count}\n\n"
+            f"*API Usage Breakdown:*\n"
+            f"🥇 Binance: {api_usage_stats['binance']} symbols\n"
+            f"🥈 Bybit: {api_usage_stats['bybit']} symbols\n"
+            f"🥉 Coinbase: {api_usage_stats['coinbase']} symbols\n"
+            f"🆘 MEXC (Last Resort): {api_usage_stats['mexc']} symbols\n\n"
+            f"*Updated watchlist:*\n" +
+            "\n".join([f"• {s}" for s in working_symbols[:15]]) +
+            (f"\n• ... and {len(working_symbols)-15} more" if len(working_symbols) > 15 else "") +
+            "\n\n🔥 *4-Tier System:* Binance → Bybit → Coinbase → MEXC"
+        )
+        self.send_telegram_alert(status_msg)
+    
+    return working_symbols
+
 
     # Enhanced Telegram Commands
     def process_telegram_command(self, message_text: str) -> str:
