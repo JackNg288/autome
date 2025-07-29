@@ -126,7 +126,7 @@ class RobustAPIHandler:
         self.rate_limit_delays = {
             "binance": 0.15,     # 10 requests per second
             "bybit": 0.1,       # 5 requests per second  
-            "coinbase": 0.2    # 7 requests per second
+            "coinbase": 0.2,    # 7 requests per second
             "mexc": 0.3    # 7 requests per second
         }
         
