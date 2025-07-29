@@ -1213,75 +1213,75 @@ class UltimateMEXCBot:
         return message
 
     def filter_working_symbols(self) -> List[str]:
-    """Filter symbols with 4-tier API reporting"""
-    working_symbols = []
-    failed_count = 0
-    api_usage_stats = {"binance": 0, "bybit": 0, "coinbase": 0, "mexc": 0, "failed": 0}
+        """Filter symbols with 4-tier API reporting"""
+        working_symbols = []
+        failed_count = 0
+        api_usage_stats = {"binance": 0, "bybit": 0, "coinbase": 0, "mexc": 0, "failed": 0}
     
-    logger.info("🔍 Testing symbols across 4-tier API system...")
+        logger.info("🔍 Testing symbols across 4-tier API system...")
     
-    for symbol in self.symbols:
-        try:
-            # Track which API actually worked
-            df = None
-            working_api = None
+        for symbol in self.symbols:
+            try:
+                # Track which API actually worked
+                df = None
+                working_api = None
             
-            # Test in order: Binance → Bybit → Coinbase → MEXC
-            df = self._fetch_binance_working(symbol, "5m", 10)
-            if df is not None and len(df) >= 5:
-                working_api = "binance"
-            else:
-                df = self._fetch_bybit_working(symbol, "5m", 10)
+                # Test in order: Binance → Bybit → Coinbase → MEXC
+                df = self._fetch_binance_working(symbol, "5m", 10)
                 if df is not None and len(df) >= 5:
-                    working_api = "bybit"
+                working_api = "binance"
                 else:
-                    df = self._fetch_coinbase_working(symbol, "5m", 10)
+                    df = self._fetch_bybit_working(symbol, "5m", 10)
                     if df is not None and len(df) >= 5:
-                        working_api = "coinbase"
+                        working_api = "bybit"
                     else:
-                        df = self._fetch_mexc_last_resort(symbol, "5m", 10)
+                        df = self._fetch_coinbase_working(symbol, "5m", 10)
                         if df is not None and len(df) >= 5:
-                            working_api = "mexc"
+                            working_api = "coinbase"
+                        else:
+                            df = self._fetch_mexc_last_resort(symbol, "5m", 10)
+                            if df is not None and len(df) >= 5:
+                                working_api = "mexc"
             
-            if working_api:
-                working_symbols.append(symbol)
-                api_usage_stats[working_api] += 1
-                logger.info(f"✅ {symbol} - Working ({working_api.upper()})")
-            else:
+                if working_api:
+                    working_symbols.append(symbol)
+                    api_usage_stats[working_api] += 1
+                    logger.info(f"✅ {symbol} - Working ({working_api.upper()})")
+                else:
+                    failed_count += 1
+                    api_usage_stats["failed"] += 1
+                    logger.warning(f"❌ {symbol} - Failed (all 4 APIs)")
+                    
+            except Exception as e:
                 failed_count += 1
                 api_usage_stats["failed"] += 1
-                logger.warning(f"❌ {symbol} - Failed (all 4 APIs)")
-                
-        except Exception as e:
-            failed_count += 1
-            api_usage_stats["failed"] += 1
-            logger.warning(f"❌ {symbol} - Error: {e}")
+                logger.warning(f"❌ {symbol} - Error: {e}")
             
-        time.sleep(0.2)  # Rate limiting
+            time.sleep(0.2)  # Rate limiting
     
-    logger.info(f"📊 4-Tier API test complete: {len(working_symbols)} working, {failed_count} failed")
+        logger.info(f"📊 4-Tier API test complete: {len(working_symbols)} working, {failed_count} failed")
     
-    if working_symbols:
-        self.symbols = working_symbols
-        self.save_symbols(working_symbols)
+        if working_symbols:
+            self.symbols = working_symbols
+            self.save_symbols(working_symbols)
         
-        status_msg = (
-            f"📊 *Ultimate Bot - 4-Tier API Test Results*\n\n"
-            f"✅ Total Working: {len(working_symbols)}\n"
-            f"❌ Total Failed: {failed_count}\n\n"
-            f"*API Usage Breakdown:*\n"
-            f"🥇 Binance: {api_usage_stats['binance']} symbols\n"
-            f"🥈 Bybit: {api_usage_stats['bybit']} symbols\n"
-            f"🥉 Coinbase: {api_usage_stats['coinbase']} symbols\n"
-            f"🆘 MEXC (Last Resort): {api_usage_stats['mexc']} symbols\n\n"
-            f"*Updated watchlist:*\n" +
-            "\n".join([f"• {s}" for s in working_symbols[:15]]) +
-            (f"\n• ... and {len(working_symbols)-15} more" if len(working_symbols) > 15 else "") +
-            "\n\n🔥 *4-Tier System:* Binance → Bybit → Coinbase → MEXC"
-        )
-        self.send_telegram_alert(status_msg)
+            status_msg = (
+                f"📊 *Ultimate Bot - 4-Tier API Test Results*\n\n"
+                f"✅ Total Working: {len(working_symbols)}\n"
+                f"❌ Total Failed: {failed_count}\n\n"
+                f"*API Usage Breakdown:*\n"
+                f"🥇 Binance: {api_usage_stats['binance']} symbols\n"
+                f"🥈 Bybit: {api_usage_stats['bybit']} symbols\n"
+                f"🥉 Coinbase: {api_usage_stats['coinbase']} symbols\n"
+                f"🆘 MEXC (Last Resort): {api_usage_stats['mexc']} symbols\n\n"
+                f"*Updated watchlist:*\n" +
+                "\n".join([f"• {s}" for s in working_symbols[:15]]) +
+                (f"\n• ... and {len(working_symbols)-15} more" if len(working_symbols) > 15 else "") +
+                "\n\n🔥 *4-Tier System:* Binance → Bybit → Coinbase → MEXC"
+            )
+            self.send_telegram_alert(status_msg)
     
-    return working_symbols
+        return working_symbols
 
 
     # Enhanced Telegram Commands
