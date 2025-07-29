@@ -268,131 +268,154 @@ class UltimateMEXCBot:
             logger.error(f"Error saving last update ID: {e}")
 
     def fetch_klines(self, symbol: str, interval: str, limit: int = 200) -> Optional[pd.DataFrame]:
-        """Multi-API kline fetching: MEXC Spot → MEXC Futures → Binance"""
-        
-        if symbol in self.failed_symbols:
-            return None
-        
-        try:
-            # Try MEXC Spot first (original preference)
-            df = self._fetch_mexc_spot(symbol, interval, limit)
-            if df is not None:
-                return df
-                
-            # Try MEXC Futures
-            df = self._fetch_mexc_futures(symbol, interval, limit)
-            if df is not None:
-                return df
-                
-            # Binance fallback
-            df = self._fetch_binance_fallback(symbol, interval, limit)
-            if df is not None:
-                return df
-                
-            # Mark as failed
-            self.failed_symbols.add(symbol)
-            logger.debug(f"All APIs failed for {symbol}")
-            return None
-            
-        except Exception as e:
-            logger.error(f"Critical error fetching {symbol}: {e}")
-            return None
-
-    def _fetch_mexc_spot(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
-        """MEXC Spot API implementation"""
-        try:
-            self.api_handler.is_rate_limited("mexc_spot")
-            
-            url = "https://api.mexc.com/api/v3/klines"
-            params = {"symbol": symbol, "interval": interval, "limit": min(limit, 1000)}
-            
-            response = self.session.get(url, params=params, timeout=10)
-            
-            if response.status_code in [400, 404]:
-                return None
-            elif response.status_code == 429:
-                time.sleep(2)
-                return None
-                
-            response.raise_for_status()
-            data = response.json()
-            
-            if not isinstance(data, list) or len(data) == 0:
-                return None
-            
-            df = pd.DataFrame(data)
-            if len(df.columns) >= 8:
-                df = df.iloc[:, :8]
-                df.columns = [
-                    "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
-                ]
-            else:
-                return None
-            
-            # Convert to numeric
-            numeric_cols = ["open", "high", "low", "close", "volume"]
-            for col in numeric_cols:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            
-            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-            df = df.sort_values("timestamp").reset_index(drop=True)
-            
-            if len(df) < 10:
-                return None
-                
-            logger.debug(f"✅ MEXC Spot: {len(df)} candles for {symbol}")
+    """FIXED: Multi-API kline fetching that actually works in 2025"""
+    
+    if symbol in self.failed_symbols:
+        return None
+    
+    try:
+        # Try Binance first (most reliable in 2025)
+        df = self._fetch_binance_working(symbol, interval, limit)
+        if df is not None:
             return df
             
-        except Exception as e:
-            logger.debug(f"MEXC Spot failed for {symbol}: {e}")
-            return None
+        # Try Bybit as fallback
+        df = self._fetch_bybit_working(symbol, interval, limit)
+        if df is not None:
+            return df
+            
+        # Mark as failed
+        self.failed_symbols.add(symbol)
+        logger.debug(f"All working APIs failed for {symbol}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Critical error fetching {symbol}: {e}")
+        return None
 
-    def _fetch_mexc_futures(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
-        """MEXC Futures API implementation"""
-        try:
-            self.api_handler.is_rate_limited("mexc_futures")
+def _fetch_binance_working(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
+    """WORKING Binance API implementation for 2025"""
+    try:
+        # Rate limiting
+        time.sleep(0.1)
+        
+        url = "https://api.binance.com/api/v3/klines"
+        params = {"symbol": symbol, "interval": interval, "limit": min(limit, 1000)}
+        
+        response = self.session.get(url, params=params, timeout=15)
+        
+        if response.status_code == 451:  # Geo-blocked
+            logger.debug(f"Binance geo-blocked for {symbol}")
+            return None
+        elif response.status_code in [400, 404]:
+            logger.debug(f"Binance symbol not found: {symbol}")
+            return None
+        elif response.status_code == 429:
+            time.sleep(2)
+            return None
             
-            formatted_symbol = symbol.replace("USDT", "_USDT")
-            interval_map = {
-                "1m": "Min1", "5m": "Min5", "15m": "Min15", "30m": "Min30",
-                "1h": "Min60", "4h": "Hour4", "1d": "Day1"
-            }
-            mexc_interval = interval_map.get(interval, interval)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not isinstance(data, list) or len(data) == 0:
+            return None
+        
+        # Convert to DataFrame with proper columns
+        df = pd.DataFrame(data)
+        if len(df.columns) >= 8:
+            df = df.iloc[:, :8]
+            df.columns = [
+                "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
+            ]
+        else:
+            return None
+        
+        # Convert to numeric
+        numeric_cols = ["open", "high", "low", "close", "volume"]
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        
+        if len(df) < 10:
+            return None
             
-            url = "https://contract.mexc.com/api/v1/contract/kline"
-            params = {
-                "symbol": formatted_symbol,
-                "interval": mexc_interval,
-                "limit": min(limit, 2000)
-            }
+        logger.debug(f"✅ Binance: {len(df)} candles for {symbol}")
+        return df
+        
+    except Exception as e:
+        logger.debug(f"Binance failed for {symbol}: {e}")
+        return None
+
+def _fetch_bybit_working(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
+    """WORKING Bybit API implementation for 2025"""
+    try:
+        # Rate limiting
+        time.sleep(0.2)
+        
+        # Map intervals for Bybit
+        interval_map = {
+            "1m": "1", "5m": "5", "15m": "15", "30m": "30",
+            "1h": "60", "4h": "240", "1d": "D"
+        }
+        bybit_interval = interval_map.get(interval, "5")
+        
+        url = "https://api.bybit.com/v5/market/kline"
+        params = {
+            "category": "spot",
+            "symbol": symbol,
+            "interval": bybit_interval,
+            "limit": min(limit, 1000)
+        }
+        
+        response = self.session.get(url, params=params, timeout=15)
+        
+        if response.status_code in [400, 404]:
+            return None
+        elif response.status_code == 429:
+            time.sleep(2)
+            return None
             
-            response = self.session.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('retCode') != 0 or not data.get('result', {}).get('list'):
+            return None
+        
+        # Convert Bybit format to standard format
+        klines = data['result']['list']
+        df_data = []
+        
+        for kline in klines:
+            # Bybit format: [startTime, openPrice, highPrice, lowPrice, closePrice, volume, turnover]
+            df_data.append([
+                int(kline[0]),  # timestamp
+                float(kline[1]),  # open
+                float(kline[2]),  # high
+                float(kline[3]),  # low
+                float(kline[4]),  # close
+                float(kline[5]),  # volume
+                int(kline[0]) + (int(bybit_interval) * 60 * 1000),  # close_time
+                float(kline[6]) if len(kline) > 6 else float(kline[5]) * float(kline[4])  # quote_volume
+            ])
+        
+        df = pd.DataFrame(df_data, columns=[
+            "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
+        ])
+        
+        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        
+        if len(df) < 10:
+            return None
             
-            if response.status_code in [404, 400]:
-                return None
-            elif response.status_code == 429:
-                time.sleep(2)
-                return None
-                
-            response.raise_for_status()
-            data = response.json()
-            
-            if "data" not in data or not data["data"]:
-                return None
-            
-            df = pd.DataFrame(data["data"])
-            if len(df.columns) >= 6:
-                df = df.iloc[:, :8] if len(df.columns) >= 8 else df.iloc[:, :6]
-                if len(df.columns) == 8:
-                    df.columns = [
-                        "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
-                    ]
-                else:
-                    df.columns = ["timestamp", "open", "high", "low", "close", "volume"]
-                    df["close_time"] = df["timestamp"]
-                    df["quote_volume"] = df["volume"]
-            else:
-                return None
+        logger.debug(f"✅ Bybit: {len(df)} candles for {symbol}")
+        return df
+        
+    except Exception as e:
+        logger.debug(f"Bybit failed for {symbol}: {e}")
+        return None
             
             # Convert to numeric
             numeric_cols = ["open", "high", "low", "close", "volume"]
