@@ -270,8 +270,7 @@ class UltimateMEXCBot:
             logger.error(f"Error saving last update ID: {e}")
 
     def fetch_klines(self, symbol: str, interval: str, limit: int = 200) -> Optional[pd.DataFrame]:
-    """UPDATED: Four-tier API fallback system with MEXC as last resort"""
-    
+    """Working API fallback system"""
     if symbol in self.failed_symbols:
         return None
     
@@ -304,7 +303,6 @@ class UltimateMEXCBot:
     except Exception as e:
         logger.error(f"Critical error fetching {symbol}: {e}")
         return None
-
         
     def _fetch_binance_working(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
         """WORKING Binance API implementation for 2025"""
