@@ -305,6 +305,10 @@ class UltimateMEXCBot:
         logger.error(f"Critical error fetching {symbol}: {e}")
         return None
         
+    except Exception as e:
+        logger.error(f"Critical error fetching {symbol}: {e}")
+        return None
+        
     def _fetch_binance_working(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
         """WORKING Binance API implementation for 2025"""
         try:
