@@ -491,18 +491,19 @@ class UltimateMEXCBot:
         except Exception as e:
             logger.debug(f"Coinbase failed for {symbol}: {e}")
             return None
+
     def _fetch_mexc_last_resort(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
-    """MEXC API as last resort with enhanced error handling"""
+        """MEXC API as last resort with enhanced error handling"""
         try:
-        # Rate limiting (MEXC is more restrictive)
-        time.sleep(0.3)
-        
-        url = "https://api.mexc.com/api/v3/klines"
-        params = {"symbol": symbol, "interval": interval, "limit": min(limit, 1000)}
-        
-        response = self.session.get(url, params=params, timeout=15)
-        
-        # Handle MEXC-specific error codes
+            # Rate limiting (MEXC is more restrictive)
+            time.sleep(0.3)
+            
+            url = "https://api.mexc.com/api/v3/klines"
+            params = {"symbol": symbol, "interval": interval, "limit": min(limit, 1000)}
+            
+            response = self.session.get(url, params=params, timeout=15)
+            
+            # Handle MEXC-specific error codes
             if response.status_code == 400:
                 try:
                     error_data = response.json()
@@ -523,11 +524,11 @@ class UltimateMEXCBot:
             
             response.raise_for_status()
             data = response.json()
-        
+            
             if not isinstance(data, list) or len(data) == 0:
                 return None
-        
-        # Convert MEXC format to standard format
+            
+            # Convert MEXC format to standard format
             df = pd.DataFrame(data)
             if len(df.columns) >= 8:
                 df = df.iloc[:, :8]
@@ -536,24 +537,24 @@ class UltimateMEXCBot:
                 ]
             else:
                 return None
-        
-        # Convert to numeric
+            
+            # Convert to numeric
             numeric_cols = ["open", "high", "low", "close", "volume"]
             for col in numeric_cols:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-        
+            
             df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
             df = df.sort_values("timestamp").reset_index(drop=True)
-        
+            
             if len(df) < 10:
                 return None
             
             logger.debug(f"✅ MEXC (Last Resort): {len(df)} candles for {symbol}")
             return df
-        
+            
         except Exception as e:
             logger.debug(f"MEXC last resort failed for {symbol}: {e}")
-            return None        
+            return None    
    
         
     def calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
