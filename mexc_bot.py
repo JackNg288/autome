@@ -270,40 +270,41 @@ class UltimateMEXCBot:
             logger.error(f"Error saving last update ID: {e}")
 
     def fetch_klines(self, symbol: str, interval: str, limit: int = 200) -> Optional[pd.DataFrame]:
-        """FIXED: Multi-API kline fetching that works in 2025"""
-        
-        if symbol in self.failed_symbols:
-            return None
-        
-        try:
-            # Try Bybit first (most reliable in 2025)
-            df = self._fetch_bybit_working(symbol, interval, limit)
-            if df is not None:
-                return df
-                
-            # Try Binance as fallback
-            df = self._fetch_binance_working(symbol, interval, limit)
-            if df is not None:
-                return df
-                
-            # Try Coinbase as last resort
-            df = self._fetch_coinbase_working(symbol, interval, limit)
-            if df is not None:
-                return df
-
-            df = self._fetch_mexc_last_resort(symbol, interval, limit)
-            if df is not None:
-                return df
+    """UPDATED: Four-tier API fallback system with MEXC as last resort"""
+    
+    if symbol in self.failed_symbols:
+        return None
+    
+    try:
+        # Try Binance FIRST (most reliable for major pairs)
+        df = self._fetch_binance_working(symbol, interval, limit)
+        if df is not None:
+            return df
             
-            # Mark as failed
-            self.failed_symbols.add(symbol)
-            logger.debug(f"All working APIs failed for {symbol}")
-            return None
+        # Try Bybit SECOND (excellent altcoin coverage)
+        df = self._fetch_bybit_working(symbol, interval, limit)
+        if df is not None:
+            return df
             
-        except Exception as e:
-            logger.error(f"Critical error fetching {symbol}: {e}")
-            return None
-
+        # Try Coinbase THIRD (limited but stable)
+        df = self._fetch_coinbase_working(symbol, interval, limit)
+        if df is not None:
+            return df
+            
+        # Try MEXC as LAST RESORT (many restrictions but extensive listing)
+        df = self._fetch_mexc_last_resort(symbol, interval, limit)
+        if df is not None:
+            return df
+            
+        # Mark as failed after all APIs tried
+        self.failed_symbols.add(symbol)
+        logger.debug(f"All 4 APIs failed for {symbol}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Critical error fetching {symbol}: {e}")
+        return None
+        
     def _fetch_binance_working(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
         """WORKING Binance API implementation for 2025"""
         try:
