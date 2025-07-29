@@ -556,7 +556,6 @@ class UltimateMEXCBot:
         logger.debug(f"MEXC last resort failed for {symbol}: {e}")
         return None
 
-
     def calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Enhanced RSI calculation"""
         try:
