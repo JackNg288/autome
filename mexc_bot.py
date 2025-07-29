@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Ultimate Enhanced MEXC Bot - Professional Trading Analysis
+Ultimate Enhanced MEXC Trading Bot - 2025 Working Version
 Features:
-- Multi-API Support: MEXC Spot → MEXC Futures → Binance Fallback
+- FIXED Multi-API Support: Binance → Bybit → Coinbase (MEXC APIs have restrictions)
 - Advanced Technical Analysis: 20+ indicators without TA-Lib dependency  
 - Multi-Timeframe Confluence: 5m, 15m, 1h analysis
 - Smart Money Concepts: Order blocks, Fair Value Gaps
@@ -124,9 +124,9 @@ class RobustAPIHandler:
         self.failed_symbols = set()
         self.symbol_cache = {}
         self.rate_limit_delays = {
-            "mexc_spot": 0.2,      # 5 requests per second
-            "mexc_futures": 0.3,   # 3 requests per second  
-            "binance": 0.1         # 10 requests per second
+            "binance": 0.1,     # 10 requests per second
+            "bybit": 0.2,       # 5 requests per second  
+            "coinbase": 0.15    # 7 requests per second
         }
         
     def is_rate_limited(self, api_key: str) -> bool:
@@ -144,7 +144,7 @@ class RobustAPIHandler:
 class UltimateMEXCBot:
     def __init__(self):
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'UltimateMEXCBot/4.0'})
+        self.session.headers.update({'User-Agent': 'UltimateMEXCBot/4.1-2025'})
         self.symbols_file = "symbols.txt"
         self.alerts_file = "price_alerts.json"
         self.symbols = self.load_symbols()
@@ -187,14 +187,15 @@ class UltimateMEXCBot:
         self.api_handler = RobustAPIHandler(self)
         self.failed_symbols = set()
         
-        logger.info("Ultimate MEXC Bot initialized with advanced analysis capabilities")
+        logger.info("Ultimate MEXC Bot 2025 initialized with working APIs")
 
     def load_symbols(self) -> List[str]:
-        """Load symbols with reliable defaults"""
-        reliable_symbols = [
+        """Load symbols with 2025-working defaults"""
+        # These symbols work across multiple APIs in 2025
+        working_symbols_2025 = [
             "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
-            "SOLUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT", "LTCUSDT",
-            "AVAXUSDT", "LINKUSDT", "TRXUSDT", "ATOMUSDT", "XLMUSDT",
+            "SOLUSDT", "DOGEUSDT", "LTCUSDT", "AVAXUSDT", "LINKUSDT",
+            "DOTUSDT", "MATICUSDT", "TRXUSDT", "ATOMUSDT", "XLMUSDT",
             "BCHUSDT", "ETCUSDT", "FILUSDT", "VETUSDT", "ICPUSDT"
         ]
         
@@ -206,13 +207,13 @@ class UltimateMEXCBot:
                         logger.info(f"Loaded {len(symbols)} symbols from {self.symbols_file}")
                         return symbols
             
-            logger.info("Using reliable default symbols")
-            self.save_symbols(reliable_symbols)
-            return reliable_symbols
+            logger.info("Using 2025-compatible working symbols")
+            self.save_symbols(working_symbols_2025)
+            return working_symbols_2025
             
         except Exception as e:
             logger.error(f"Error loading symbols: {e}")
-            return reliable_symbols
+            return working_symbols_2025
 
     def save_symbols(self, symbols: List[str]) -> bool:
         """Save symbols to file"""
@@ -268,184 +269,51 @@ class UltimateMEXCBot:
             logger.error(f"Error saving last update ID: {e}")
 
     def fetch_klines(self, symbol: str, interval: str, limit: int = 200) -> Optional[pd.DataFrame]:
-    """FIXED: Multi-API kline fetching that actually works in 2025"""
-    
-    if symbol in self.failed_symbols:
-        return None
-    
-    try:
-        # Try Binance first (most reliable in 2025)
-        df = self._fetch_binance_working(symbol, interval, limit)
-        if df is not None:
-            return df
-            
-        # Try Bybit as fallback
-        df = self._fetch_bybit_working(symbol, interval, limit)
-        if df is not None:
-            return df
-            
-        # Mark as failed
-        self.failed_symbols.add(symbol)
-        logger.debug(f"All working APIs failed for {symbol}")
-        return None
+        """FIXED: Multi-API kline fetching that works in 2025"""
         
-    except Exception as e:
-        logger.error(f"Critical error fetching {symbol}: {e}")
-        return None
-
-def _fetch_binance_working(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
-    """WORKING Binance API implementation for 2025"""
-    try:
-        # Rate limiting
-        time.sleep(0.1)
-        
-        url = "https://api.binance.com/api/v3/klines"
-        params = {"symbol": symbol, "interval": interval, "limit": min(limit, 1000)}
-        
-        response = self.session.get(url, params=params, timeout=15)
-        
-        if response.status_code == 451:  # Geo-blocked
-            logger.debug(f"Binance geo-blocked for {symbol}")
-            return None
-        elif response.status_code in [400, 404]:
-            logger.debug(f"Binance symbol not found: {symbol}")
-            return None
-        elif response.status_code == 429:
-            time.sleep(2)
-            return None
-            
-        response.raise_for_status()
-        data = response.json()
-        
-        if not isinstance(data, list) or len(data) == 0:
+        if symbol in self.failed_symbols:
             return None
         
-        # Convert to DataFrame with proper columns
-        df = pd.DataFrame(data)
-        if len(df.columns) >= 8:
-            df = df.iloc[:, :8]
-            df.columns = [
-                "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
-            ]
-        else:
-            return None
-        
-        # Convert to numeric
-        numeric_cols = ["open", "high", "low", "close", "volume"]
-        for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-        df = df.sort_values("timestamp").reset_index(drop=True)
-        
-        if len(df) < 10:
-            return None
-            
-        logger.debug(f"✅ Binance: {len(df)} candles for {symbol}")
-        return df
-        
-    except Exception as e:
-        logger.debug(f"Binance failed for {symbol}: {e}")
-        return None
-
-def _fetch_bybit_working(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
-    """WORKING Bybit API implementation for 2025"""
-    try:
-        # Rate limiting
-        time.sleep(0.2)
-        
-        # Map intervals for Bybit
-        interval_map = {
-            "1m": "1", "5m": "5", "15m": "15", "30m": "30",
-            "1h": "60", "4h": "240", "1d": "D"
-        }
-        bybit_interval = interval_map.get(interval, "5")
-        
-        url = "https://api.bybit.com/v5/market/kline"
-        params = {
-            "category": "spot",
-            "symbol": symbol,
-            "interval": bybit_interval,
-            "limit": min(limit, 1000)
-        }
-        
-        response = self.session.get(url, params=params, timeout=15)
-        
-        if response.status_code in [400, 404]:
-            return None
-        elif response.status_code == 429:
-            time.sleep(2)
-            return None
-            
-        response.raise_for_status()
-        data = response.json()
-        
-        if data.get('retCode') != 0 or not data.get('result', {}).get('list'):
-            return None
-        
-        # Convert Bybit format to standard format
-        klines = data['result']['list']
-        df_data = []
-        
-        for kline in klines:
-            # Bybit format: [startTime, openPrice, highPrice, lowPrice, closePrice, volume, turnover]
-            df_data.append([
-                int(kline[0]),  # timestamp
-                float(kline[1]),  # open
-                float(kline[2]),  # high
-                float(kline[3]),  # low
-                float(kline[4]),  # close
-                float(kline[5]),  # volume
-                int(kline[0]) + (int(bybit_interval) * 60 * 1000),  # close_time
-                float(kline[6]) if len(kline) > 6 else float(kline[5]) * float(kline[4])  # quote_volume
-            ])
-        
-        df = pd.DataFrame(df_data, columns=[
-            "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
-        ])
-        
-        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-        df = df.sort_values("timestamp").reset_index(drop=True)
-        
-        if len(df) < 10:
-            return None
-            
-        logger.debug(f"✅ Bybit: {len(df)} candles for {symbol}")
-        return df
-        
-    except Exception as e:
-        logger.debug(f"Bybit failed for {symbol}: {e}")
-        return None
-            
-            # Convert to numeric
-            numeric_cols = ["open", "high", "low", "close", "volume"]
-            for col in numeric_cols:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            
-            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-            df = df.sort_values("timestamp").reset_index(drop=True)
-            
-            if len(df) < 10:
-                return None
+        try:
+            # Try Binance first (most reliable in 2025)
+            df = self._fetch_binance_working(symbol, interval, limit)
+            if df is not None:
+                return df
                 
-            logger.debug(f"✅ MEXC Futures: {len(df)} candles for {formatted_symbol}")
-            return df
+            # Try Bybit as fallback
+            df = self._fetch_bybit_working(symbol, interval, limit)
+            if df is not None:
+                return df
+                
+            # Try Coinbase as last resort
+            df = self._fetch_coinbase_working(symbol, interval, limit)
+            if df is not None:
+                return df
+                
+            # Mark as failed
+            self.failed_symbols.add(symbol)
+            logger.debug(f"All working APIs failed for {symbol}")
+            return None
             
         except Exception as e:
-            logger.debug(f"MEXC Futures failed for {symbol}: {e}")
+            logger.error(f"Critical error fetching {symbol}: {e}")
             return None
 
-    def _fetch_binance_fallback(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
-        """Binance fallback API"""
+    def _fetch_binance_working(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
+        """WORKING Binance API implementation for 2025"""
         try:
             self.api_handler.is_rate_limited("binance")
             
             url = "https://api.binance.com/api/v3/klines"
             params = {"symbol": symbol, "interval": interval, "limit": min(limit, 1000)}
             
-            response = self.session.get(url, params=params, timeout=10)
+            response = self.session.get(url, params=params, timeout=15)
             
-            if response.status_code in [451, 400]:
+            if response.status_code == 451:  # Geo-blocked
+                logger.debug(f"Binance geo-blocked for {symbol}")
+                return None
+            elif response.status_code in [400, 404]:
+                logger.debug(f"Binance symbol not found: {symbol}")
                 return None
             elif response.status_code == 429:
                 time.sleep(2)
@@ -454,9 +322,10 @@ def _fetch_bybit_working(self, symbol: str, interval: str, limit: int) -> Option
             response.raise_for_status()
             data = response.json()
             
-            if not data:
+            if not isinstance(data, list) or len(data) == 0:
                 return None
-                
+            
+            # Convert to DataFrame with proper columns
             df = pd.DataFrame(data)
             if len(df.columns) >= 8:
                 df = df.iloc[:, :8]
@@ -482,6 +351,141 @@ def _fetch_bybit_working(self, symbol: str, interval: str, limit: int) -> Option
             
         except Exception as e:
             logger.debug(f"Binance failed for {symbol}: {e}")
+            return None
+
+    def _fetch_bybit_working(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
+        """WORKING Bybit API implementation for 2025"""
+        try:
+            self.api_handler.is_rate_limited("bybit")
+            
+            # Map intervals for Bybit
+            interval_map = {
+                "1m": "1", "5m": "5", "15m": "15", "30m": "30",
+                "1h": "60", "4h": "240", "1d": "D"
+            }
+            bybit_interval = interval_map.get(interval, "5")
+            
+            url = "https://api.bybit.com/v5/market/kline"
+            params = {
+                "category": "spot",
+                "symbol": symbol,
+                "interval": bybit_interval,
+                "limit": min(limit, 1000)
+            }
+            
+            response = self.session.get(url, params=params, timeout=15)
+            
+            if response.status_code in [400, 404]:
+                return None
+            elif response.status_code == 429:
+                time.sleep(2)
+                return None
+                
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get('retCode') != 0 or not data.get('result', {}).get('list'):
+                return None
+            
+            # Convert Bybit format to standard format
+            klines = data['result']['list']
+            df_data = []
+            
+            for kline in klines:
+                # Bybit format: [startTime, openPrice, highPrice, lowPrice, closePrice, volume, turnover]
+                df_data.append([
+                    int(kline[0]),  # timestamp
+                    float(kline[1]),  # open
+                    float(kline[2]),  # high
+                    float(kline[3]),  # low
+                    float(kline[4]),  # close
+                    float(kline[5]),  # volume
+                    int(kline[0]) + (int(bybit_interval) * 60 * 1000),  # close_time
+                    float(kline[6]) if len(kline) > 6 else float(kline[5]) * float(kline[4])  # quote_volume
+                ])
+            
+            df = pd.DataFrame(df_data, columns=[
+                "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
+            ])
+            
+            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+            df = df.sort_values("timestamp").reset_index(drop=True)
+            
+            if len(df) < 10:
+                return None
+                
+            logger.debug(f"✅ Bybit: {len(df)} candles for {symbol}")
+            return df
+            
+        except Exception as e:
+            logger.debug(f"Bybit failed for {symbol}: {e}")
+            return None
+
+    def _fetch_coinbase_working(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
+        """WORKING Coinbase Pro API implementation for 2025"""
+        try:
+            self.api_handler.is_rate_limited("coinbase")
+            
+            # Convert symbol format (BTCUSDT -> BTC-USDT)
+            if symbol.endswith('USDT'):
+                coinbase_symbol = symbol[:-4] + '-USDT'
+            else:
+                return None
+            
+            # Map intervals for Coinbase
+            interval_map = {
+                "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
+                "1h": 3600, "4h": 14400, "1d": 86400
+            }
+            granularity = interval_map.get(interval, 300)
+            
+            url = f"https://api.exchange.coinbase.com/products/{coinbase_symbol}/candles"
+            params = {"granularity": granularity}
+            
+            response = self.session.get(url, params=params, timeout=15)
+            
+            if response.status_code in [400, 404]:
+                return None
+            elif response.status_code == 429:
+                time.sleep(2)
+                return None
+                
+            response.raise_for_status()
+            data = response.json()
+            
+            if not isinstance(data, list) or len(data) == 0:
+                return None
+            
+            # Convert Coinbase format to standard format
+            df_data = []
+            for candle in data[:limit]:
+                # Coinbase format: [timestamp, low, high, open, close, volume]
+                df_data.append([
+                    int(candle[0]) * 1000,  # timestamp (convert to ms)
+                    float(candle[3]),  # open
+                    float(candle[2]),  # high
+                    float(candle[1]),  # low
+                    float(candle[4]),  # close
+                    float(candle[5]),  # volume
+                    int(candle[0]) * 1000 + granularity * 1000,  # close_time
+                    float(candle[5]) * float(candle[4])  # quote_volume
+                ])
+            
+            df = pd.DataFrame(df_data, columns=[
+                "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
+            ])
+            
+            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+            df = df.sort_values("timestamp").reset_index(drop=True)
+            
+            if len(df) < 10:
+                return None
+                
+            logger.debug(f"✅ Coinbase: {len(df)} candles for {coinbase_symbol}")
+            return df
+            
+        except Exception as e:
+            logger.debug(f"Coinbase failed for {symbol}: {e}")
             return None
 
     def calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
@@ -731,6 +735,7 @@ def _fetch_bybit_working(self, symbol: str, interval: str, limit: int) -> Option
             # Determine signal and confidence
             signal = None
             confidence = "low"
+            
             if total_score >= self.high_confidence_score:
                 signal = "LONG"
                 confidence = "high"
@@ -917,7 +922,8 @@ def _fetch_bybit_working(self, symbol: str, interval: str, limit: int) -> Option
             f"🎯 Confidence: {confluence_result.get('confidence', 'low').upper()}\n"
             f"📊 Professional Score: {primary_data.get('score', 0)}/100\n"
             f"💰 Entry Price: ${details.get('price', 0):.4f}\n"
-            f"🏠 Base Price (EMA15): ${details.get('ema15', 0):.4f}\n\n"
+            f"🏠 Base Price (EMA15): ${details.get('ema15', 0):.4f}\n"
+            f"🔗 API Source: Multi-API (2025 Fixed)\n\n"
         )
         
         # Multi-timeframe confluence
@@ -1138,11 +1144,11 @@ def _fetch_bybit_working(self, symbol: str, interval: str, limit: int) -> Option
         return message
 
     def filter_working_symbols(self) -> List[str]:
-        """Filter symbols to only include those that work across all APIs"""
+        """Filter symbols to only include those that work across working APIs"""
         working_symbols = []
         failed_count = 0
         
-        logger.info("🔍 Testing symbols across all API endpoints...")
+        logger.info("🔍 Testing symbols across working API endpoints...")
         
         for symbol in self.symbols:
             try:
@@ -1168,13 +1174,13 @@ def _fetch_bybit_working(self, symbol: str, interval: str, limit: int) -> Option
             self.save_symbols(working_symbols)
             
             status_msg = (
-                f"📊 *Ultimate Bot - API Compatibility Test*\n\n"
+                f"📊 *Ultimate Bot 2025 - API Compatibility Test*\n\n"
                 f"✅ Working symbols: {len(working_symbols)}\n"
                 f"❌ Failed symbols: {failed_count}\n\n"
                 f"*Updated watchlist:*\n" +
                 "\n".join([f"• {s}" for s in working_symbols[:15]]) +
                 (f"\n• ... and {len(working_symbols)-15} more" if len(working_symbols) > 15 else "") +
-                "\n\n🔥 *APIs tested:* MEXC Spot → MEXC Futures → Binance"
+                "\n\n🔥 *2025 Fixed APIs:* Binance → Bybit → Coinbase"
             )
             self.send_telegram_alert(status_msg)
         
