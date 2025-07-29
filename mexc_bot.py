@@ -492,7 +492,13 @@ class UltimateMEXCBot:
             logger.debug(f"Coinbase failed for {symbol}: {e}")
             return None
     
-    def _fetch_mexc_last_resort(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
+    # SYNTAX ERROR FIX: Remove asterisks from function name
+
+# ❌ YOUR VERSION (INVALID SYNTAX):
+# def *fetch*mexc_last_resort(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
+
+# ✅ CORRECTED VERSION (VALID SYNTAX):
+def _fetch_mexc_last_resort(self, symbol: str, interval: str, limit: int) -> Optional[pd.DataFrame]:
     """MEXC API as last resort with enhanced error handling"""
     try:
         # Rate limiting (MEXC is more restrictive)
@@ -555,7 +561,7 @@ class UltimateMEXCBot:
     except Exception as e:
         logger.debug(f"MEXC last resort failed for {symbol}: {e}")
         return None
-
+        
     def calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Enhanced RSI calculation"""
         try:
