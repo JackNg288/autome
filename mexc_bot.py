@@ -276,12 +276,12 @@ class UltimateMEXCBot:
         
         try:
             # Try Binance first (most reliable in 2025)
-            df = self._fetch_binance_working(symbol, interval, limit)
+            df = self._fetch_bybit_working(symbol, interval, limit)
             if df is not None:
                 return df
                 
             # Try Bybit as fallback
-            df = self._fetch_bybit_working(symbol, interval, limit)
+            df = self._fetch_binance_working(symbol, interval, limit)
             if df is not None:
                 return df
                 
