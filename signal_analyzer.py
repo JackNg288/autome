@@ -89,36 +89,36 @@ class SignalAnalyzer:
         logger.info("Signal Analyzer initialized")
 
     def init_database(self):
-    """Initialize SQLite database for signal storage"""
-    conn = sqlite3.connect(self.db_file)
-    cursor = conn.cursor()
+        """Initialize SQLite database for signal storage"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
     
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS signals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            signal_id TEXT UNIQUE,
-            timestamp DATETIME,
-            symbol TEXT,
-            direction TEXT,
-            entry_price REAL,
-            current_price REAL,
-            target_price REAL,
-            stop_loss REAL,
-            status TEXT,
-            pnl_percent REAL,
-            pnl_amount REAL,
-            source TEXT,
-            confidence REAL,
-            timeframe TEXT,
-            indicators TEXT,
-            close_time DATETIME,
-            close_price REAL,
-            max_profit REAL,
-            max_loss REAL,
-            hold_time INTEGER,
-            notes TEXT
-        )
-    ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id TEXT UNIQUE,
+                timestamp DATETIME,
+                symbol TEXT,
+                direction TEXT,
+                entry_price REAL,
+                current_price REAL,
+                target_price REAL,
+                stop_loss REAL,
+                status TEXT,
+                pnl_percent REAL,
+                pnl_amount REAL,
+                source TEXT,
+                confidence REAL,
+                timeframe TEXT,
+                indicators TEXT,
+                close_time DATETIME,
+                close_price REAL,
+                max_profit REAL,
+                max_loss REAL,
+                hold_time INTEGER,
+                notes TEXT
+            )
+        ''')
     
     # FIXED: split each CREATE INDEX into its own execute!
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_symbol ON signals(symbol);')
