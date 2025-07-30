@@ -726,7 +726,7 @@ Expectancy: {stats['expectancy']}%"""
                 return self.export_signals_csv()
             
             elif command == '/help':
-                return """📋 *Signal Analyzer Commands:*
+    return """📋 *Signal Analyzer Commands:*
 
 *Add Signals:*
 /long SYMBOL PRICE [TP] [SL] - Add long signal
@@ -745,3 +745,4 @@ Expectancy: {stats['expectancy']}%"""
 *Examples:*
 /long BTCUSDT 116000
 /analyze BTCUSDT LONG 116000
+"""  
