@@ -1,645 +1,203 @@
 #!/usr/bin/env python3
 """
-Sig_288bot - MEXC EMA5/EMA10 Crossover + RSI Strategy with Price Alerts
-Features:
-- EMA5/EMA10 crossover as main signal
-- EMA15 as base price reference
-- RSI filter: >55 for Long, <45 for Short
-- 5m and 15m timeframes
-- 24/7 continuous operation
-- Price alert system via Telegram
-- Auto-alert on base price (EMA15) when signal detected
+Modified MEXC Bot - Integrated with Signal Analyzer
+This version sends signals to the analyzer for performance tracking
 """
-import requests
-import pandas as pd
-import numpy as np
-import os
-import os
-from dotenv import load_dotenv
-load_dotenv()
-import logging
-import time
+
+# Add this import at the top of your existing mexc_bot.py
 import json
 from datetime import datetime
-from typing import Optional, Dict, Any, List
-import threading
-from urllib.parse import urlencode
 
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('mexc_bot.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
-
-class MEXCBot:
+# Add this class to your existing mexc_bot.py after the imports
+class SignalOutput:
+    """Output signals for the analyzer"""
+    
     def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'Sig_288bot/2.0'})
-        self.symbols_file = "symbols.txt"
-        self.alerts_file = "price_alerts.json"
-        self.symbols = self.load_symbols()
-        self.price_alerts = self.load_price_alerts()
-        self.base_url = "https://api.mexc.com"
+        self.signal_file = "active_signals.json"
         
-        # Strategy parameters
-        self.ema5_period = 5
-        self.ema10_period = 10
-        self.ema15_period = 15
-        self.rsi_period = 14
-        self.rsi_long_threshold = 55
-        self.rsi_short_threshold = 45
-        
-        # 24/7 operation settings
-        self.scan_interval = 30  # seconds between scans
-        self.running = True
-        
-        # Telegram credentials
-        self.telegram_token = os.getenv("TELEGRAM_TOKEN")
-        self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
-        
-        # Track last processed update to avoid duplicates
-        self.last_update_id = self.load_last_update_id()
-        
-    def load_symbols(self) -> List[str]:
-        """Load symbols from symbols.txt file"""
-        default_symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "THEUSDT", "XRPUSDT", "SUIUSDT","CHESSUSDT","OGUSDT","MASKUSDT","EDUUSDT","SHIBUSDT","TRUMPUSDT","FUNUSDT","HYPEUSDT","LDOUSDT","FETUSDT","EIGENUSDT","TOKENUSDT","ZKUSDT","JASMYUSDT","ADAUSDT","OMUSDT","LTCUSDT","APTUSDT"]
+    def save_signal(self, symbol: str, signal_type: str, signal_data: Dict):
+        """Save signal for analyzer to process"""
         try:
-            if os.path.exists(self.symbols_file):
-                with open(self.symbols_file, 'r') as f:
-                    symbols = [line.strip().upper() for line in f.readlines() if line.strip()]
-                    if symbols:
-                        logger.info(f"Loaded {len(symbols)} symbols from {self.symbols_file}")
-                        return symbols
-                    else:
-                        logger.info("Empty symbols file, using defaults")
-                        self.save_symbols(default_symbols)
-                        return default_symbols
-            else:
-                logger.info("Symbols file not found, creating with defaults")
-                self.save_symbols(default_symbols)
-                return default_symbols
-        except Exception as e:
-            logger.error(f"Error loading symbols: {e}, using defaults")
-            return default_symbols
-
-    def save_symbols(self, symbols: List[str]) -> bool:
-        """Save symbols to symbols.txt file"""
-        try:
-            with open(self.symbols_file, 'w') as f:
-                for symbol in symbols:
-                    f.write(f"{symbol.upper()}\n")
-            logger.info(f"Saved {len(symbols)} symbols to {self.symbols_file}")
-            return True
-        except Exception as e:
-            logger.error(f"Error saving symbols: {e}")
-            return False
-
-    def load_price_alerts(self) -> Dict[str, List[Dict]]:
-        """Load price alerts from JSON file"""
-        try:
-            if os.path.exists(self.alerts_file):
-                with open(self.alerts_file, 'r') as f:
-                    alerts = json.load(f)
-                    logger.info(f"Loaded {sum(len(v) for v in alerts.values())} price alerts")
-                    return alerts
-            else:
-                return {}
-        except Exception as e:
-            logger.error(f"Error loading price alerts: {e}")
-            return {}
-
-    def save_price_alerts(self) -> bool:
-        """Save price alerts to JSON file"""
-        try:
-            with open(self.alerts_file, 'w') as f:
-                json.dump(self.price_alerts, f, indent=2)
-            logger.info(f"Saved {sum(len(v) for v in self.price_alerts.values())} price alerts")
-            return True
-        except Exception as e:
-            logger.error(f"Error saving price alerts: {e}")
-            return False
-
-    def add_price_alert(self, symbol: str, target_price: float, alert_type: str = "manual") -> bool:
-        """Add a price alert for a symbol"""
-        symbol = symbol.upper()
-        if symbol not in self.price_alerts:
-            self.price_alerts[symbol] = []
-        
-        # Check if alert already exists
-        for alert in self.price_alerts[symbol]:
-            if abs(alert['price'] - target_price) < 0.0001:  # Prevent duplicate alerts
-                return False
-        
-        alert = {
-            "price": target_price,
-            "type": alert_type,
-            "created": datetime.now().isoformat(),
-            "id": f"{symbol}_{target_price}_{int(time.time())}"
-        }
-        
-        self.price_alerts[symbol].append(alert)
-        self.save_price_alerts()
-        return True
-
-    def remove_price_alert(self, symbol: str, target_price: float = None, alert_id: str = None) -> bool:
-        """Remove a price alert"""
-        symbol = symbol.upper()
-        if symbol not in self.price_alerts:
-            return False
-        
-        original_count = len(self.price_alerts[symbol])
-        
-        if alert_id:
-            self.price_alerts[symbol] = [a for a in self.price_alerts[symbol] if a['id'] != alert_id]
-        elif target_price is not None:
-            self.price_alerts[symbol] = [a for a in self.price_alerts[symbol] if abs(a['price'] - target_price) > 0.0001]
-        
-        # Clean up empty symbol entries
-        if not self.price_alerts[symbol]:
-            del self.price_alerts[symbol]
-        
-        removed = original_count - len(self.price_alerts.get(symbol, []))
-        if removed > 0:
-            self.save_price_alerts()
-            return True
-        return False
-
-    def check_price_alerts(self, symbol: str, current_price: float) -> List[Dict]:
-        """Check if current price triggers any alerts"""
-        triggered_alerts = []
-        if symbol not in self.price_alerts:
-            return triggered_alerts
-        
-        alerts_to_remove = []
-        for alert in self.price_alerts[symbol]:
-            target_price = alert['price']
-            
-            # Check if price target is reached (with small tolerance for floating point)
-            if abs(current_price - target_price) <= (target_price * 0.002):  # 0.2% tolerance
-                triggered_alerts.append({
-                    'symbol': symbol,
-                    'target_price': target_price,
-                    'current_price': current_price,
-                    'type': alert['type'],
-                    'created': alert['created'],
-                    'alert_id': alert['id']
-                })
-                alerts_to_remove.append(alert['id'])
-        
-        # Remove triggered alerts
-        for alert_id in alerts_to_remove:
-            self.remove_price_alert(symbol, alert_id=alert_id)
-        
-        return triggered_alerts
-
-    def load_last_update_id(self) -> int:
-        """Load last processed update ID to avoid duplicate processing"""
-        try:
-            if os.path.exists("last_update.txt"):
-                with open("last_update.txt", 'r') as f:
-                    return int(f.read().strip())
-        except:
-            pass
-        return 0
-
-    def save_last_update_id(self, update_id: int):
-        """Save last processed update ID"""
-        try:
-            with open("last_update.txt", 'w') as f:
-                f.write(str(update_id))
-        except Exception as e:
-            logger.error(f"Error saving last update ID: {e}")
-
-    def fetch_klines(self, symbol: str, interval: str, limit: int = 100) -> Optional[pd.DataFrame]:
-        """Fetch kline data with increased limit for better indicator calculations"""
-        url = f"{self.base_url}/api/v3/klines"
-        params = {"symbol": symbol, "interval": interval, "limit": limit}
-        try:
-            response = self.session.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            if not isinstance(data, list) or len(data) == 0:
-                logger.warning(f"No kline data for {symbol} ({interval})")
-                return None
-            df = pd.DataFrame(data, columns=[
-                "timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_volume"
-            ])
-            df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].apply(pd.to_numeric)
-            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-            return df.sort_values("timestamp").reset_index(drop=True)
-        except Exception as e:
-            logger.error(f"Error fetching klines for {symbol} ({interval}): {e}")
-            return None
-
-    def calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator"""
-        try:
-            delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        except Exception as e:
-            logger.error(f"RSI calculation error: {e}")
-            return pd.Series([50] * len(prices))  # Return neutral RSI on error
-
-    def get_high_low_levels(self, df: pd.DataFrame, candles: int = 5) -> Dict[str, float]:
-        """Get highest and lowest prices from last N candles"""
-        if df is None or len(df) < candles:
-            return {"highest": 0.0, "lowest": 0.0}
-        try:
-            last_candles = df.tail(candles)
-            highest = last_candles["high"].max()
-            lowest = last_candles["low"].min()
-            return {"highest": float(highest), "lowest": float(lowest)}
-        except Exception as e:
-            logger.error(f"Error calculating high/low levels: {e}")
-            return {"highest": 0.0, "lowest": 0.0}
-
-    def check_ema_crossover(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Check for EMA5/EMA10 crossover signal with RSI filter"""
-        if df is None or len(df) < max(self.ema15_period, self.rsi_period) + 5:
-            return {"signal": None, "reason": "Insufficient data"}
-        try:
-            # Calculate EMAs
-            df["ema5"] = df["close"].ewm(span=self.ema5_period, adjust=False).mean()
-            df["ema10"] = df["close"].ewm(span=self.ema10_period, adjust=False).mean()
-            df["ema15"] = df["close"].ewm(span=self.ema15_period, adjust=False).mean()
-            # Calculate RSI
-            df["rsi"] = self.calculate_rsi(df["close"], self.rsi_period)
-            # Get latest and previous values
-            latest = df.iloc[-1]
-            prev = df.iloc[-2]
-            # Check for crossovers
-            bullish_cross = (latest["ema5"] > latest["ema10"]) and (prev["ema5"] <= prev["ema10"])
-            bearish_cross = (latest["ema5"] < latest["ema10"]) and (prev["ema5"] >= prev["ema10"])
-            # Apply RSI filter
-            rsi_long_ok = latest["rsi"] > self.rsi_long_threshold
-            rsi_short_ok = latest["rsi"] < self.rsi_short_threshold
-            signal = None
-            if bullish_cross and rsi_long_ok:
-                signal = "LONG"
-            elif bearish_cross and rsi_short_ok:
-                signal = "SHORT"
-            return {
-                "signal": signal,
-                "price": latest["close"],
-                "ema5": latest["ema5"],
-                "ema10": latest["ema10"],
-                "ema15": latest["ema15"],  # Base price reference
-                "rsi": latest["rsi"],
-                "volume": latest["volume"],
-                "timestamp": latest["datetime"],
-                "bullish_cross": bullish_cross,
-                "bearish_cross": bearish_cross,
-                "rsi_long_ok": rsi_long_ok,
-                "rsi_short_ok": rsi_short_ok
+            # Create signal record
+            signal_record = {
+                'signal_id': f"{symbol}_{signal_type}_{int(time.time())}",
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'direction': signal_type,
+                'entry_price': signal_data.get('price', 0),
+                'base_price': signal_data.get('ema15', 0),
+                'confidence': self._calculate_confidence(signal_data),
+                'source': 'BOT',
+                'timeframe': '5m',
+                'indicators': {
+                    'ema5': signal_data.get('ema5', 0),
+                    'ema10': signal_data.get('ema10', 0),
+                    'ema15': signal_data.get('ema15', 0),
+                    'rsi': signal_data.get('rsi', 50),
+                    'volume': signal_data.get('volume', 0)
+                },
+                'atr_percent': 2.0  # Default 2% for TP/SL calculation
             }
-        except Exception as e:
-            logger.error(f"Signal calculation error: {e}")
-            return {"signal": None, "reason": str(e)}
-
-    def format_trading_info(self, symbol: str, signal_5m: Dict, signal_15m: Dict, signal_type: str, levels_15m: Dict) -> str:
-        """Format trading information without trading execution"""
-        emoji = "🟢" if signal_type == "LONG" else "🔴"
-        message = (
-            f"{emoji} *{signal_type} SIGNAL: {symbol}*\n"
-            f"💰 Current Price: ${signal_5m['price']:.4f}\n"
-            f"🎯 Base Price (EMA15): ${signal_5m['ema15']:.4f}\n"
-            f"📊 Alert Set: Price reaches ${signal_5m['ema15']:.4f}\n"
-            f"\n📈 *Market Analysis:*\n"
-            f"   📊 15m Chart Levels (Last 5 candles):\n"
-            f"   • Highest: ${levels_15m['highest']:.4f}\n"
-            f"   • Lowest: ${levels_15m['lowest']:.4f}\n"
-            f"\n📈 *5M Timeframe:*\n"
-            f"   EMA5: ${signal_5m['ema5']:.4f}\n"
-            f"   EMA10: ${signal_5m['ema10']:.4f}\n"
-            f"   RSI: {signal_5m['rsi']:.1f}\n"
-            f"   Volume: {signal_5m['volume']:.0f}\n"
-            f"\n📈 *15M Timeframe:*\n"
-            f"   EMA5: ${signal_15m['ema5']:.4f}\n"
-            f"   EMA10: ${signal_15m['ema10']:.4f}\n"
-            f"   RSI: {signal_15m['rsi']:.1f}\n"
-            f"   Volume: {signal_15m['volume']:.0f}\n"
-            f"\n⏰ Time: {signal_5m['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-        return message
-
-    def format_price_alert(self, alert: Dict) -> str:
-        """Format price alert message"""
-        alert_type_emoji = "🤖" if alert['type'] == "auto" else "🔔"
-        return (
-            f"{alert_type_emoji} *PRICE ALERT: {alert['symbol']}*\n"
-            f"🎯 Target Price: ${alert['target_price']:.4f}\n"
-            f"💰 Current Price: ${alert['current_price']:.4f}\n"
-            f"📊 Alert Type: {alert['type'].upper()}\n"
-            f"⏰ Triggered: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-
-    def add_symbol(self, symbol: str) -> bool:
-        """Add a new symbol to the list"""
-        symbol = symbol.upper()
-        if symbol not in self.symbols:
-            self.symbols.append(symbol)
-            return self.save_symbols(self.symbols)
-        return False
-
-    def remove_symbol(self, symbol: str) -> bool:
-        """Remove a symbol from the list"""
-        symbol = symbol.upper()
-        if symbol in self.symbols:
-            self.symbols.remove(symbol)
-            return self.save_symbols(self.symbols)
-        return False
-
-    def list_symbols(self) -> str:
-        """Return formatted list of current symbols"""
-        return f"Current symbols ({len(self.symbols)}):\n" + "\n".join([f"• {symbol}" for symbol in self.symbols])
-
-    def list_alerts(self) -> str:
-        """Return formatted list of current price alerts"""
-        if not self.price_alerts:
-            return "📭 No active price alerts"
-        
-        message = "🔔 *Active Price Alerts:*\n\n"
-        total_alerts = 0
-        for symbol, alerts in self.price_alerts.items():
-            if alerts:
-                message += f"*{symbol}:*\n"
-                for alert in alerts:
-                    alert_type = "🤖 Auto" if alert['type'] == "auto" else "👤 Manual"
-                    message += f"  • ${alert['price']:.4f} ({alert_type})\n"
-                total_alerts += len(alerts)
-                message += "\n"
-        
-        message += f"Total: {total_alerts} alerts"
-        return message
-
-    def process_telegram_command(self, message_text: str) -> str:
-        """Process telegram commands for symbol and alert management"""
-        try:
-            parts = message_text.strip().split()
-            if not parts:
-                return "Invalid command format"
-            command = parts[0].lower()
             
-            if command == "/alert" and len(parts) == 3:
-                symbol = parts[1].upper()
+            # Load existing signals
+            signals = []
+            if os.path.exists(self.signal_file):
                 try:
-                    price = float(parts[2])
-                    if self.add_price_alert(symbol, price, "manual"):
-                        return f"🔔 Price alert set for {symbol} at ${price:.4f}"
-                    else:
-                        return f"⚠️ Alert for {symbol} at ${price:.4f} already exists"
-                except ValueError:
-                    return "❌ Invalid price format"
-            elif command == "/removealert" and len(parts) == 3:
-                symbol = parts[1].upper()
-                try:
-                    price = float(parts[2])
-                    if self.remove_price_alert(symbol, price):
-                        return f"✅ Removed alert for {symbol} at ${price:.4f}"
-                    else:
-                        return f"⚠️ Alert not found for {symbol} at ${price:.4f}"
-                except ValueError:
-                    return "❌ Invalid price format"
-            elif command == "/alerts":
-                return self.list_alerts()
-            elif command == "/add" and len(parts) == 2:
-                symbol = parts[1].upper()
-                if self.add_symbol(symbol):
-                    return f"✅ Added {symbol} to watchlist"
-                else:
-                    return f"⚠️ {symbol} already in watchlist"
-            elif command == "/remove" and len(parts) == 2:
-                symbol = parts[1].upper()
-                if self.remove_symbol(symbol):
-                    return f"✅ Removed {symbol} from watchlist"
-                else:
-                    return f"⚠️ {symbol} not found in watchlist"
-            elif command == "/list":
-                return self.list_symbols()
-            elif command == "/update" and len(parts) >= 2:
-                new_symbols = [s.upper() for s in parts[1:]]
-                self.symbols = new_symbols
-                if self.save_symbols(self.symbols):
-                    return f"✅ Updated watchlist with {len(new_symbols)} symbols:\n" + "\n".join([f"• {s}" for s in new_symbols])
-                else:
-                    return "❌ Failed to update symbols file"
-            elif command == "/stop":
-                self.running = False
-                return "🛑 Bot stopping..."
-            elif command == "/start":
-                self.running = True
-                return "▶️ Bot starting..."
-            elif command == "/interval" and len(parts) == 2:
-                try:
-                    new_interval = int(parts[1])
-                    if 30 <= new_interval <= 3600:
-                        self.scan_interval = new_interval
-                        return f"✅ Scan interval set to {new_interval} seconds"
-                    else:
-                        return "❌ Interval must be between 30 and 3600 seconds"
-                except ValueError:
-                    return "❌ Invalid interval value"
-            elif command == "/help":
-                return (
-                    "📋 *Available Commands:*\n\n"
-                    "*Symbol Management:*\n"
-                    "/add SYMBOL - Add symbol to watchlist\n"
-                    "/remove SYMBOL - Remove symbol from watchlist\n"
-                    "/list - Show current symbols\n"
-                    "/update SYMBOL1 SYMBOL2... - Replace all symbols\n\n"
-                    "*Price Alerts:*\n"
-                    "/alert SYMBOL PRICE - Set price alert\n"
-                    "/removealert SYMBOL PRICE - Remove price alert\n"
-                    "/alerts - Show all active alerts\n\n"
-                    "*Bot Control:*\n"
-                    "/stop - Stop bot\n"
-                    "/start - Start bot\n"
-                    "/interval SECONDS - Set scan interval\n"
-                    "/status - Show bot status\n"
-                    "/help - Show this help\n\n"
-                    "*Examples:*\n"
-                    "/alert BTCUSDT 119000\n"
-                    "/removealert BTCUSDT 119000"
-                )
-            elif command == "/status":
-                status = "🟢 Running" if self.running else "🔴 Stopped"
-                total_alerts = sum(len(v) for v in self.price_alerts.values())
-                return (
-                    f"🤖 *Bot Status*\n"
-                    f"Status: {status}\n"
-                    f"Symbols: {len(self.symbols)}\n"
-                    f"Active Alerts: {total_alerts}\n"
-                    f"Scan Interval: {self.scan_interval}s\n"
-                    f"Strategy: EMA5/EMA10 + RSI + Price Alerts\n"
-                    f"Timeframes: 5m & 15m\n"
-                    f"RSI: Long >55, Short <45"
-                )
-            else:
-                return "❌ Unknown command. Use /help for available commands"
-        except Exception as e:
-            logger.error(f"Error processing command: {e}")
-            return f"❌ Error processing command: {str(e)}"
-
-    def check_telegram_updates(self):
-        """Check for new Telegram messages and process commands"""
-        if not self.telegram_token or not self.chat_id:
-            return
-        try:
-            url = f"https://api.telegram.org/bot{self.telegram_token}/getUpdates"
-            params = {"offset": self.last_update_id + 1, "limit": 10}
-            response = self.session.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            if data.get("ok") and data.get("result"):
-                for update in data["result"]:
-                    update_id = update.get("update_id", 0)
-                    message = update.get("message", {})
-                    if str(message.get("chat", {}).get("id", "")) == str(self.chat_id):
-                        text = message.get("text", "")
-                        if text.startswith("/"):
-                            logger.info(f"Processing command: {text}")
-                            response_text = self.process_telegram_command(text)
-                            self.send_telegram_alert(response_text)
-                    if update_id > self.last_update_id:
-                        self.last_update_id = update_id
-                        self.save_last_update_id(self.last_update_id)
-        except Exception as e:
-            logger.error(f"Error checking Telegram updates: {e}")
-
-    def send_telegram_alert(self, message: str) -> bool:
-        """Send alert to Telegram"""
-        if not self.telegram_token or not self.chat_id:
-            logger.warning("Missing TELEGRAM_TOKEN or CHAT_ID.")
-            return False
-        url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
-        payload = {
-            "chat_id": self.chat_id,
-            "text": message,
-            "parse_mode": "Markdown"
-        }
-        try:
-            res = self.session.post(url, data=payload, timeout=10)
-            res.raise_for_status()
-            logger.info("Telegram message sent.")
+                    with open(self.signal_file, 'r') as f:
+                        signals = json.load(f)
+                except:
+                    signals = []
+            
+            # Add new signal
+            signals.append(signal_record)
+            
+            # Save back
+            with open(self.signal_file, 'w') as f:
+                json.dump(signals, f, indent=2)
+                
+            logger.info(f"Signal saved for analyzer: {signal_record['signal_id']}")
             return True
+            
         except Exception as e:
-            logger.error(f"Failed to send Telegram alert: {e}")
+            logger.error(f"Error saving signal for analyzer: {e}")
             return False
+    
+    def _calculate_confidence(self, signal_data: Dict) -> float:
+        """Calculate signal confidence based on indicators"""
+        confidence = 50.0  # Base confidence
+        
+        # RSI confirmation
+        rsi = signal_data.get('rsi', 50)
+        if 55 < rsi < 70:  # Good RSI range for long
+            confidence += 10
+        elif 30 < rsi < 45:  # Good RSI range for short
+            confidence += 10
+        
+        # Volume confirmation
+        if signal_data.get('volume', 0) > signal_data.get('volume_ma', 0) * 1.2:
+            confidence += 10
+        
+        # EMA alignment
+        if signal_data.get('ema5', 0) > signal_data.get('ema10', 0) > signal_data.get('ema15', 0):
+            confidence += 10  # Bullish alignment
+        elif signal_data.get('ema5', 0) < signal_data.get('ema10', 0) < signal_data.get('ema15', 0):
+            confidence += 10  # Bearish alignment
+        
+        return min(confidence, 90)  # Cap at 90%
 
-    def run_single_analysis(self):
-        """Run a single analysis cycle"""
-        logger.info("Running EMA Crossover + RSI analysis...")
-        self.check_telegram_updates()
-        if not self.running:
-            return
+
+# Modify your existing MEXCBot class - add this to __init__:
+# self.signal_output = SignalOutput()
+
+# Modify your run_single_analysis method in MEXCBot class:
+# Add this code block after detecting a signal (around line 850 in your original code)
+"""
+# After this line: if signal_detected:
+#     message = self.format_trading_info(symbol, signal_5m, signal_15m, signal_detected, levels_15m)
+#     alerts.append(message)
+#     
+#     # ADD THIS: Save signal for analyzer
+#     self.signal_output.save_signal(symbol, signal_detected, signal_5m)
+#     
+#     logger.info(f"{signal_detected} signal detected for {symbol}")
+"""
+
+# Here's the complete modified run_single_analysis method:
+def run_single_analysis_with_output(bot_instance):
+    """Modified run_single_analysis that outputs to analyzer"""
+    logger.info("Running EMA Crossover + RSI analysis...")
+    bot_instance.check_telegram_updates()
+    if not bot_instance.running:
+        return
+    
+    alerts = []
+    price_alerts_triggered = []
+    
+    # Initialize signal output if not exists
+    if not hasattr(bot_instance, 'signal_output'):
+        bot_instance.signal_output = SignalOutput()
+    
+    for symbol in bot_instance.symbols:
+        df_5m = bot_instance.fetch_klines(symbol, "5m", 100)
+        df_15m = bot_instance.fetch_klines(symbol, "15m", 100)
+        if df_5m is None or df_15m is None:
+            logger.warning(f"Could not fetch data for {symbol}")
+            continue
         
-        alerts = []
-        price_alerts_triggered = []
+        current_price = float(df_5m.iloc[-1]['close'])
         
-        for symbol in self.symbols:
-            df_5m = self.fetch_klines(symbol, "5m", 100)
-            df_15m = self.fetch_klines(symbol, "15m", 100)
-            if df_5m is None or df_15m is None:
-                logger.warning(f"Could not fetch data for {symbol}")
-                continue
-            
-            current_price = float(df_5m.iloc[-1]['close'])
-            
-            # Check price alerts first
-            triggered = self.check_price_alerts(symbol, current_price)
-            for alert in triggered:
-                alert_message = self.format_price_alert(alert)
-                price_alerts_triggered.append(alert_message)
-                logger.info(f"Price alert triggered for {symbol} at ${current_price:.4f}")
-            
-            signal_5m = self.check_ema_crossover(df_5m)
-            signal_15m = self.check_ema_crossover(df_15m)
-            levels_15m = self.get_high_low_levels(df_15m, 5)
-            
-            signal_detected = None
-            if (signal_5m["signal"] == "LONG" and signal_15m["signal"] == "LONG"):
+        # Check price alerts first
+        triggered = bot_instance.check_price_alerts(symbol, current_price)
+        for alert in triggered:
+            alert_message = bot_instance.format_price_alert(alert)
+            price_alerts_triggered.append(alert_message)
+            logger.info(f"Price alert triggered for {symbol} at ${current_price:.4f}")
+        
+        signal_5m = bot_instance.check_ema_crossover(df_5m)
+        signal_15m = bot_instance.check_ema_crossover(df_15m)
+        levels_15m = bot_instance.get_high_low_levels(df_15m, 5)
+        
+        signal_detected = None
+        if (signal_5m["signal"] == "LONG" and signal_15m["signal"] == "LONG"):
+            signal_detected = "LONG"
+        elif (signal_5m["signal"] == "SHORT" and signal_15m["signal"] == "SHORT"):
+            signal_detected = "SHORT"
+        elif signal_5m["signal"] == "LONG" and signal_15m["signal"] != "SHORT":
+            if signal_15m["rsi"] > bot_instance.rsi_long_threshold:
                 signal_detected = "LONG"
-            elif (signal_5m["signal"] == "SHORT" and signal_15m["signal"] == "SHORT"):
+        elif signal_5m["signal"] == "SHORT" and signal_15m["signal"] != "LONG":
+            if signal_15m["rsi"] < bot_instance.rsi_short_threshold:
                 signal_detected = "SHORT"
-            elif signal_5m["signal"] == "LONG" and signal_15m["signal"] != "SHORT":
-                if signal_15m["rsi"] > self.rsi_long_threshold:
-                    signal_detected = "LONG"
-            elif signal_5m["signal"] == "SHORT" and signal_15m["signal"] != "LONG":
-                if signal_15m["rsi"] < self.rsi_short_threshold:
-                    signal_detected = "SHORT"
+        
+        if signal_detected:
+            message = bot_instance.format_trading_info(symbol, signal_5m, signal_15m, signal_detected, levels_15m)
+            alerts.append(message)
             
-            if signal_detected:
-                message = self.format_trading_info(symbol, signal_5m, signal_15m, signal_detected, levels_15m)
-                alerts.append(message)
-                logger.info(f"{signal_detected} signal detected for {symbol}")
-                
-                # Auto-set alert for base price (EMA15)
-                base_price = signal_5m['ema15']
-                if self.add_price_alert(symbol, base_price, "auto"):
-                    logger.info(f"Auto-alert set for {symbol} at base price ${base_price:.4f}")
-                
-                logger.info(f"{symbol} 5m - EMA5: {signal_5m['ema5']:.4f}, EMA10: {signal_5m['ema10']:.4f}, RSI: {signal_5m['rsi']:.1f}")
-                logger.info(f"{symbol} 15m - EMA5: {signal_15m['ema5']:.4f}, EMA10: {signal_15m['ema10']:.4f}, RSI: {signal_15m['rsi']:.1f}")
-                logger.info(f"{symbol} 15m Levels - High: {levels_15m['highest']:.4f}, Low: {levels_15m['lowest']:.4f}")
-            else:
-                logger.info(f"No clear signal for {symbol}")
-        
-        # Send all alerts
-        if alerts:
-            for alert in alerts:
-                self.send_telegram_alert(alert)
-        
-        if price_alerts_triggered:
-            for price_alert in price_alerts_triggered:
-                self.send_telegram_alert(price_alert)
-        
-        logger.info(f"Analysis complete. {len(alerts)} signals detected, {len(price_alerts_triggered)} price alerts triggered.")
+            # SAVE SIGNAL FOR ANALYZER
+            bot_instance.signal_output.save_signal(symbol, signal_detected, signal_5m)
+            
+            logger.info(f"{signal_detected} signal detected for {symbol}")
+            
+            # Auto-set alert for base price (EMA15)
+            base_price = signal_5m['ema15']
+            if bot_instance.add_price_alert(symbol, base_price, "auto"):
+                logger.info(f"Auto-alert set for {symbol} at base price ${base_price:.4f}")
+            
+            logger.info(f"{symbol} 5m - EMA5: {signal_5m['ema5']:.4f}, EMA10: {signal_5m['ema10']:.4f}, RSI: {signal_5m['rsi']:.1f}")
+            logger.info(f"{symbol} 15m - EMA5: {signal_15m['ema5']:.4f}, EMA10: {signal_15m['ema10']:.4f}, RSI: {signal_15m['rsi']:.1f}")
+            logger.info(f"{symbol} 15m Levels - High: {levels_15m['highest']:.4f}, Low: {levels_15m['lowest']:.4f}")
+        else:
+            logger.info(f"No clear signal for {symbol}")
+    
+    # Send all alerts
+    if alerts:
+        for alert in alerts:
+            bot_instance.send_telegram_alert(alert)
+    
+    if price_alerts_triggered:
+        for price_alert in price_alerts_triggered:
+            bot_instance.send_telegram_alert(price_alert)
+    
+    logger.info(f"Analysis complete. {len(alerts)} signals detected, {len(price_alerts_triggered)} price alerts triggered.")
 
-    def run_24_7(self):
-        logger.info("Starting 24/7 bot operation...")
-        startup_msg = (
-            "🤖 *Sig_288bot v2.0 - 24/7 Mode Started*\n"
-            "Strategy: EMA5/EMA10 Crossover + RSI Filter + Price Alerts\n"
-            "Timeframes: 5m & 15m\n"
-            "RSI Thresholds: Long >55, Short <45\n"
-            f"Scan Interval: {self.scan_interval}s\n"
-            f"Trading: ❌ Disabled (Alert Mode Only)\n\n"
-            f"📋 Monitoring {len(self.symbols)} symbols:\n" +
-            "\n".join([f"• {symbol}" for symbol in self.symbols]) +
-            "\n\n🔔 Features:\n"
-            "• Manual alerts: /alert SYMBOL PRICE\n"
-            "• Auto alerts on base price (EMA15)\n"
-            "• Real-time price monitoring\n\n"
-            "Use /help for commands"
-        )
-        self.send_telegram_alert(startup_msg)
-        
-        while True:
-            try:
-                if self.running:
-                    self.run_single_analysis()
-                else:
-                    logger.info("Bot paused. Waiting for /start command...")
-                time.sleep(self.scan_interval)
-            except KeyboardInterrupt:
-                logger.info("Bot stopped by user (Ctrl+C)")
-                self.send_telegram_alert("🛑 Bot manually stopped.")
-                break
-            except Exception as e:
-                logger.error(f"Critical error in main loop: {e}")
-                self.send_telegram_alert(f"❗️Bot error: {e}")
-                time.sleep(60)  # Wait longer on error
 
-if __name__ == "__main__":
-    bot = MEXCBot()
-    bot.run_24_7()
+# Integration Instructions:
+print("""
+INTEGRATION INSTRUCTIONS FOR YOUR EXISTING MEXC BOT:
+
+1. Add the SignalOutput class to your mexc_bot.py file
+
+2. In your MEXCBot.__init__ method, add:
+   self.signal_output = SignalOutput()
+
+3. In your run_single_analysis method, after detecting a signal, add:
+   self.signal_output.save_signal(symbol, signal_detected, signal_5m)
+
+4. The signals will be saved to 'active_signals.json' file
+
+5. Run both bots simultaneously:
+   Terminal 1: python mexc_bot.py
+   Terminal 2: python signal_analyzer.py
+
+The analyzer will automatically pick up signals from the bot!
+""")
