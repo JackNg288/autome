@@ -745,3 +745,6 @@ Expectancy: {stats['expectancy']}%"""
 /long BTCUSDT 116000
 /analyze BTCUSDT LONG 116000
 """
+    except Exception as e:
+        logger.error(f"Error in process_telegram_command: {e}")
+        return f"❌ Error: {str(e)}"
