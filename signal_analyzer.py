@@ -120,14 +120,14 @@ class SignalAnalyzer:
             )
         ''')
     
-    # FIXED: split each CREATE INDEX into its own execute!
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_symbol ON signals(symbol);')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON signals(timestamp);')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_status ON signals(status);')
+        # FIXED: split each CREATE INDEX into its own execute!
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_symbol ON signals(symbol);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON signals(timestamp);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_status ON signals(status);')
     
-    conn.commit()
-    conn.close()
-    logger.info("Database initialized")
+        conn.commit()
+        conn.close()
+        logger.info("Database initialized")
 
     def load_last_update_id(self) -> int:
         """Load last Telegram update ID"""
