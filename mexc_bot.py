@@ -7,6 +7,7 @@ This version sends signals to the analyzer for performance tracking
 # Add this import at the top of your existing mexc_bot.py
 import json
 from datetime import datetime
+from typing import Dict
 
 # Add this class to your existing mexc_bot.py after the imports
 class SignalOutput:
