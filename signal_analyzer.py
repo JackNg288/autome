@@ -108,6 +108,23 @@ class SignalAnalyzer:
         except Exception as e:
             logger.error(f"Exception sending Telegram alert: {e}")
             return False
+
+    def run_forever(self, update_interval=60, report_interval=3600):
+        """Run the analyzer loop forever, updating signals and sending periodic reports."""
+        logger.info("🚦 SignalAnalyzer started in 24/7 monitoring mode.")
+        last_report = time.time()
+        try:
+            while True:
+                self.update_active_signals()
+                now = time.time()
+                # Send report every `report_interval` seconds
+                if now - last_report > report_interval:
+                    report = self.generate_performance_report(7)
+                    self.send_telegram_alert(report)
+                    last_report = now
+                time.sleep(update_interval)
+        except KeyboardInterrupt:
+            logger.info("SignalAnalyzer stopped by user.")
     
     def init_database(self):
         """Initialize SQLite database for signal storage"""
@@ -768,3 +785,7 @@ Expectancy: {stats['expectancy']}%"""
         except Exception as e:
             logger.error(f"Error in process_telegram_command: {e}")
             return f"❌ Error: {str(e)}"
+
+if __name__ == "__main__":
+    analyzer = SignalAnalyzer()
+    analyzer.run_forever(update_interval=30, report_interval=3600)
