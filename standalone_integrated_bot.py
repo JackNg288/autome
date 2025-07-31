@@ -26,8 +26,6 @@ class MiniSignalAnalyzer:
     def __init__(self):
         self.db_file = "signals_database.db"
         self.init_database()
-        self.telegram_token = os.getenv("TELEGRAM_TOKEN")
-        self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
     def init_database(self):
         conn = sqlite3.connect(self.db_file)
@@ -204,6 +202,8 @@ class StandaloneIntegratedBot:
         self.rsi_period = 14
         self.rsi_long_threshold = 55
         self.rsi_short_threshold = 45
+        self.telegram_token = os.getenv("TELEGRAM_TOKEN")
+        self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
         self.running = True
         logger.info("Standalone Integrated Bot initialized")
 
@@ -277,11 +277,8 @@ class StandaloneIntegratedBot:
 
     def check_signals(self, df):
         signals = []
-
-        # Must have enough data for indicators
         if df is None or len(df) < 50:
             return signals
-
         try:
             # Compute all indicators
             df["ema5"] = df["close"].ewm(span=self.ema5_period, adjust=False).mean()
@@ -298,7 +295,7 @@ class StandaloneIntegratedBot:
             latest = df.iloc[-1]
             prev = df.iloc[-2]
 
-            # --- 1. EMA5/10 Crossover + RSI
+            # 1. EMA5/10 Crossover + RSI
             bullish_cross = (latest["ema5"] > latest["ema10"]) and (prev["ema5"] <= prev["ema10"])
             bearish_cross = (latest["ema5"] < latest["ema10"]) and (prev["ema5"] >= prev["ema10"])
             if bullish_cross and latest["rsi"] > self.rsi_long_threshold:
@@ -312,7 +309,7 @@ class StandaloneIntegratedBot:
                     "reason": "EMA5/10 bearish crossover & RSI confirmation",
                 })
 
-            # --- 2. MACD Crossover + RSI Filter
+            # 2. MACD Crossover + RSI Filter
             macd_bull = (latest["macd"] > latest["macd_signal"]) and (prev["macd"] <= prev["macd_signal"]) and latest["rsi"] > 50
             macd_bear = (latest["macd"] < latest["macd_signal"]) and (prev["macd"] >= prev["macd_signal"]) and latest["rsi"] < 50
             if macd_bull:
@@ -326,7 +323,7 @@ class StandaloneIntegratedBot:
                     "reason": "MACD bearish crossover & RSI<50"
                 })
 
-            # --- 3. RSI Oversold/Overbought Reversal
+            # 3. RSI Oversold/Overbought Reversal
             rsi_oversold = (prev["rsi"] < 30 and latest["rsi"] >= 30)
             rsi_overbought = (prev["rsi"] > 70 and latest["rsi"] <= 70)
             if rsi_oversold:
@@ -340,7 +337,7 @@ class StandaloneIntegratedBot:
                     "reason": "RSI overbought reversal (crossed down 70)"
                 })
 
-            # --- 4. Bollinger Band Reversal
+            # 4. Bollinger Band Reversal
             bb_long = (prev["close"] < prev["bb_lower"] and latest["close"] > latest["bb_lower"])
             bb_short = (prev["close"] > prev["bb_upper"] and latest["close"] < latest["bb_upper"])
             if bb_long:
@@ -354,23 +351,18 @@ class StandaloneIntegratedBot:
                     "reason": "Bollinger Band upper reversal"
                 })
 
-            # --- 5. Price/Volume Breakout
-            # Price breaks recent high with volume spike (long)
+            # 5. Price/Volume Breakout
             if (latest["close"] > df["close"].iloc[-21:-1].max()) and (latest["volume"] > 2 * latest["vol_avg"]):
                 signals.append({
                     "signal": "LONG",
                     "reason": "Price breakout new high with volume spike"
                 })
-            # Price breaks recent low with volume spike (short)
             if (latest["close"] < df["close"].iloc[-21:-1].min()) and (latest["volume"] > 2 * latest["vol_avg"]):
                 signals.append({
                     "signal": "SHORT",
                     "reason": "Price breakout new low with volume spike"
                 })
 
-            # Add more strategies here!
-
-            # Append extra info to all
             for sig in signals:
                 sig.update({
                     "price": float(latest["close"]),
@@ -390,12 +382,14 @@ class StandaloneIntegratedBot:
         return signals
 
     def send_telegram(self, message):
-        if not self.analyzer.telegram_token or not self.analyzer.chat_id:
+        token = self.telegram_token
+        chat_id = self.chat_id
+        if not token or not chat_id:
             return
         try:
-            url = f"https://api.telegram.org/bot{self.analyzer.telegram_token}/sendMessage"
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
             payload = {
-                "chat_id": self.analyzer.chat_id,
+                "chat_id": chat_id,
                 "text": message,
                 "parse_mode": "Markdown"
             }
@@ -405,7 +399,6 @@ class StandaloneIntegratedBot:
 
     def run_analysis(self):
         logger.info("Running analysis...")
-
         for symbol in self.symbols:
             try:
                 # Use 5m and 15m by default
@@ -460,19 +453,19 @@ class StandaloneIntegratedBot:
                             f"Volume: `{sig['volume']:.2f}`\n"
                             f"Time: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`"
                         )
-                        self.analyzer.send_telegram(message)
+                        self.send_telegram(message)
 
             except Exception as e:
                 logger.error(f"Error analyzing {symbol}: {e}")
 
         # Update active signals and notify on close
-        self.analyzer.update_active_signals(self.fetch_price, self.analyzer.send_telegram)
+        self.analyzer.update_active_signals(self.fetch_price, self.send_telegram)
         # Log stats
         stats = self.analyzer.get_stats()
         logger.info(f"Stats - Total: {stats['total']}, Active: {stats['active']}, Win Rate: {stats['win_rate']:.1f}%")
 
     def run(self):
-        self.analyzer.send_telegram("🤖 *Standalone Integrated Bot Started*\n\nMonitoring signals and tracking performance...")
+        self.send_telegram("🤖 *Standalone Integrated Bot Started*\n\nMonitoring signals and tracking performance...")
         while self.running:
             try:
                 self.run_analysis()
@@ -483,12 +476,11 @@ class StandaloneIntegratedBot:
                 logger.error(f"Error in main loop: {e}")
                 time.sleep(60)
         stats = self.analyzer.get_stats()
-        self.analyzer.send_telegram(
+        self.send_telegram(
             f"🛑 *Bot Stopped*\n\n"
             f"Total Signals: {stats['total']}\n"
             f"Win Rate: {stats['win_rate']:.1f}%"
         )
-
 
 if __name__ == "__main__":
     print("""
