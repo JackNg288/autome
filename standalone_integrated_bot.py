@@ -29,18 +29,18 @@ logger = logging.getLogger(__name__)
 
 class MiniSignalAnalyzer:
     """Simplified Signal Analyzer integrated into bot"""
-    
+
     def __init__(self):
         self.db_file = "signals_database.db"
         self.init_database()
         self.telegram_token = os.getenv("TELEGRAM_TOKEN")
         self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
-        
+
     def init_database(self):
         """Initialize SQLite database"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
-        
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS signals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,18 +58,18 @@ class MiniSignalAnalyzer:
                 confidence REAL
             )
         ''')
-        
+
         conn.commit()
         conn.close()
         logger.info("Database initialized")
-    
+
     def capture_signal(self, signal_data: Dict) -> str:
         """Capture and store signal"""
         try:
             symbol = signal_data.get('symbol')
             direction = signal_data.get('direction', '').upper()
             entry_price = float(signal_data.get('entry_price', 0))
-            
+
             # Calculate TP/SL
             atr_percent = 2.0  # 2% default
             if direction == "LONG":
@@ -78,12 +78,12 @@ class MiniSignalAnalyzer:
             else:
                 stop_loss = entry_price * (1 + atr_percent / 100)
                 target_price = entry_price * (1 - atr_percent * 2 / 100)
-            
+
             signal_id = f"{symbol}_{direction}_{int(time.time())}"
-            
+
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 INSERT INTO signals (signal_id, timestamp, symbol, direction, 
                 entry_price, target_price, stop_loss, status, source, confidence,
@@ -102,36 +102,36 @@ class MiniSignalAnalyzer:
                 signal_data.get('confidence', 70),
                 entry_price
             ))
-            
+
             conn.commit()
             conn.close()
-            
+
             logger.info(f"Signal captured: {signal_id}")
             return f"✅ Signal captured: {symbol} {direction} @ ${entry_price:.4f}"
-            
+
         except Exception as e:
             logger.error(f"Error capturing signal: {e}")
             return f"❌ Error: {str(e)}"
-    
-    def update_active_signals(self, price_fetcher):
-        """Update active signals with current prices"""
+
+    def update_active_signals(self, price_fetcher, telegram_sender=None):
+        """Update active signals with current prices and send Telegram on close"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
-        
+
         cursor.execute('''
-            SELECT signal_id, symbol, direction, entry_price, target_price, stop_loss
+            SELECT signal_id, symbol, direction, entry_price, target_price, stop_loss, current_price
             FROM signals WHERE status = 'ACTIVE'
         ''')
-        
+
         active_signals = cursor.fetchall()
-        
+
         for signal in active_signals:
-            signal_id, symbol, direction, entry_price, target_price, stop_loss = signal
-            
+            signal_id, symbol, direction, entry_price, target_price, stop_loss, prev_price = signal
+
             current_price = price_fetcher(symbol)
             if not current_price:
                 continue
-            
+
             # Calculate PnL
             if direction == "LONG":
                 pnl_percent = ((current_price - entry_price) / entry_price) * 100
@@ -141,46 +141,71 @@ class MiniSignalAnalyzer:
                 pnl_percent = ((entry_price - current_price) / entry_price) * 100
                 hit_target = current_price <= target_price
                 hit_stop = current_price >= stop_loss
-            
+
             new_status = 'ACTIVE'
+            message = None
             if hit_target:
                 new_status = 'WIN'
+                message = (
+                    f"✅ *SIGNAL CLOSED: WIN*\n"
+                    f"Symbol: `{symbol}`\n"
+                    f"Direction: *{direction}*\n"
+                    f"Entry: `${entry_price:.4f}`\n"
+                    f"Exit: `${current_price:.4f}`\n"
+                    f"Target: `${target_price:.4f}`\n"
+                    f"Stop Loss: `${stop_loss:.4f}`\n"
+                    f"PnL: `{pnl_percent:.2f}%`"
+                )
             elif hit_stop:
                 new_status = 'LOSS'
-            
+                message = (
+                    f"❌ *SIGNAL CLOSED: LOSS*\n"
+                    f"Symbol: `{symbol}`\n"
+                    f"Direction: *{direction}*\n"
+                    f"Entry: `${entry_price:.4f}`\n"
+                    f"Exit: `${current_price:.4f}`\n"
+                    f"Target: `${target_price:.4f}`\n"
+                    f"Stop Loss: `${stop_loss:.4f}`\n"
+                    f"PnL: `{pnl_percent:.2f}%`"
+                )
+
             cursor.execute('''
                 UPDATE signals 
                 SET current_price = ?, pnl_percent = ?, status = ?
                 WHERE signal_id = ?
             ''', (current_price, pnl_percent, new_status, signal_id))
-            
-            if new_status != 'ACTIVE':
-                logger.info(f"Signal {signal_id} closed: {new_status}")
-        
+
+            if new_status != 'ACTIVE' and telegram_sender and message:
+                try:
+                    telegram_sender(message)
+                    logger.info(f"Telegram alert sent for {signal_id} ({new_status})")
+                except Exception as te:
+                    logger.error(f"Error sending telegram for {signal_id}: {te}")
+
         conn.commit()
         conn.close()
-    
+
     def get_stats(self) -> Dict:
         """Get basic statistics"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
-        
+
         cursor.execute('SELECT COUNT(*) FROM signals')
         total = cursor.fetchone()[0]
-        
+
         cursor.execute('SELECT COUNT(*) FROM signals WHERE status = "WIN"')
         wins = cursor.fetchone()[0]
-        
+
         cursor.execute('SELECT COUNT(*) FROM signals WHERE status = "LOSS"')
         losses = cursor.fetchone()[0]
-        
+
         cursor.execute('SELECT COUNT(*) FROM signals WHERE status = "ACTIVE"')
         active = cursor.fetchone()[0]
-        
+
         conn.close()
-        
+
         win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
-        
+
         return {
             'total': total,
             'wins': wins,
@@ -192,17 +217,17 @@ class MiniSignalAnalyzer:
 
 class StandaloneIntegratedBot:
     """All-in-one MEXC Bot with integrated analyzer"""
-    
+
     def __init__(self):
         self.analyzer = MiniSignalAnalyzer()
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': 'StandaloneBot/1.0'})
-        
+
         # Configuration
         self.symbols = self.load_symbols()
         self.base_url = "https://api.mexc.com"
         self.binance_url = "https://api.binance.com"
-        
+
         # Strategy parameters
         self.ema5_period = 5
         self.ema10_period = 10
@@ -210,19 +235,19 @@ class StandaloneIntegratedBot:
         self.rsi_period = 14
         self.rsi_long_threshold = 55
         self.rsi_short_threshold = 45
-        
+
         # Telegram
         self.telegram_token = os.getenv("TELEGRAM_TOKEN")
         self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
-        
+
         self.running = True
-        
+
         logger.info("Standalone Integrated Bot initialized")
-    
+
     def load_symbols(self) -> List[str]:
         """Load symbols from file or use defaults"""
         default_symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]
-        
+
         if os.path.exists('symbols.txt'):
             try:
                 with open('symbols.txt', 'r') as f:
@@ -231,9 +256,9 @@ class StandaloneIntegratedBot:
                         return symbols
             except:
                 pass
-        
+
         return default_symbols
-    
+
     def fetch_price(self, symbol: str) -> Optional[float]:
         """Fetch current price"""
         # Try MEXC
@@ -244,7 +269,7 @@ class StandaloneIntegratedBot:
                 return float(response.json().get('price', 0))
         except:
             pass
-        
+
         # Try Binance
         try:
             url = f"{self.binance_url}/api/v3/ticker/price"
@@ -253,21 +278,21 @@ class StandaloneIntegratedBot:
                 return float(response.json().get('price', 0))
         except:
             pass
-        
+
         return None
-    
+
     def fetch_klines(self, symbol: str, interval: str, limit: int = 100) -> Optional[pd.DataFrame]:
         """Fetch kline data"""
         try:
             url = f"{self.base_url}/api/v3/klines"
             params = {"symbol": symbol, "interval": interval, "limit": limit}
             response = self.session.get(url, params=params, timeout=10)
-            
+
             if response.status_code != 200:
                 # Try Binance
                 url = f"{self.binance_url}/api/v3/klines"
                 response = self.session.get(url, params=params, timeout=10)
-            
+
             if response.status_code == 200:
                 data = response.json()
                 if data:
@@ -275,17 +300,17 @@ class StandaloneIntegratedBot:
                         "timestamp", "open", "high", "low", "close", "volume", 
                         "close_time", "quote_volume"
                     ])
-                    
+
                     numeric_cols = ["open", "high", "low", "close", "volume"]
                     df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric)
                     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-                    
+
                     return df.sort_values("timestamp").reset_index(drop=True)
         except Exception as e:
             logger.error(f"Error fetching klines for {symbol}: {e}")
-        
+
         return None
-    
+
     def calculate_rsi(self, prices: pd.Series) -> pd.Series:
         """Calculate RSI"""
         delta = prices.diff()
@@ -293,32 +318,32 @@ class StandaloneIntegratedBot:
         loss = (-delta.where(delta < 0, 0)).rolling(window=self.rsi_period).mean()
         rs = gain / loss
         return 100 - (100 / (1 + rs))
-    
+
     def check_signal(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Check for EMA crossover signal"""
         if df is None or len(df) < 50:
             return {"signal": None}
-        
+
         try:
             # Calculate indicators
             df["ema5"] = df["close"].ewm(span=self.ema5_period, adjust=False).mean()
             df["ema10"] = df["close"].ewm(span=self.ema10_period, adjust=False).mean()
             df["ema15"] = df["close"].ewm(span=self.ema15_period, adjust=False).mean()
             df["rsi"] = self.calculate_rsi(df["close"])
-            
+
             latest = df.iloc[-1]
             prev = df.iloc[-2]
-            
+
             # Check crossovers
             bullish_cross = (latest["ema5"] > latest["ema10"]) and (prev["ema5"] <= prev["ema10"])
             bearish_cross = (latest["ema5"] < latest["ema10"]) and (prev["ema5"] >= prev["ema10"])
-            
+
             signal = None
             if bullish_cross and latest["rsi"] > self.rsi_long_threshold:
                 signal = "LONG"
             elif bearish_cross and latest["rsi"] < self.rsi_short_threshold:
                 signal = "SHORT"
-            
+
             return {
                 "signal": signal,
                 "price": float(latest["close"]),
@@ -328,16 +353,16 @@ class StandaloneIntegratedBot:
                 "rsi": float(latest["rsi"]),
                 "volume": float(latest["volume"])
             }
-            
+
         except Exception as e:
             logger.error(f"Signal calculation error: {e}")
             return {"signal": None}
-    
+
     def send_telegram(self, message: str):
         """Send Telegram message"""
         if not self.telegram_token or not self.chat_id:
             return
-        
+
         try:
             url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
             payload = {
@@ -348,66 +373,84 @@ class StandaloneIntegratedBot:
             requests.post(url, data=payload, timeout=10)
         except Exception as e:
             logger.error(f"Telegram error: {e}")
-    
+
     def run_analysis(self):
         """Run single analysis cycle"""
         logger.info("Running analysis...")
-        
+
         for symbol in self.symbols:
             try:
                 # Fetch data
                 df_5m = self.fetch_klines(symbol, "5m")
                 df_15m = self.fetch_klines(symbol, "15m")
-                
+
                 if df_5m is None or df_15m is None:
                     continue
-                
+
                 # Check signals
                 signal_5m = self.check_signal(df_5m)
                 signal_15m = self.check_signal(df_15m)
-                
+
                 # Determine final signal
                 signal = None
                 if signal_5m["signal"] == "LONG" and signal_15m["signal"] == "LONG":
                     signal = "LONG"
                 elif signal_5m["signal"] == "SHORT" and signal_15m["signal"] == "SHORT":
                     signal = "SHORT"
-                
+
                 if signal:
-                    # Capture signal
+                    # Prepare and save signal
                     signal_data = {
                         'symbol': symbol,
                         'direction': signal,
                         'entry_price': signal_5m['price'],
                         'confidence': 70
                     }
-                    
                     result = self.analyzer.capture_signal(signal_data)
                     logger.info(result)
-                    
-                    # Send Telegram notification
+
+                    # Fetch TP and SL from the DB for the last inserted signal
+                    conn = sqlite3.connect(self.analyzer.db_file)
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        SELECT entry_price, target_price, stop_loss 
+                        FROM signals 
+                        WHERE symbol=? AND direction=? 
+                        ORDER BY timestamp DESC LIMIT 1
+                    ''', (symbol, signal))
+                    row = cursor.fetchone()
+                    conn.close()
+
+                    if row:
+                        entry, tp, sl = row
+                    else:
+                        entry, tp, sl = signal_5m['price'], 0, 0  # fallback
+
+                    # Send detailed Telegram notification
                     message = (
                         f"{'🟢' if signal == 'LONG' else '🔴'} *{signal} SIGNAL: {symbol}*\n"
-                        f"💰 Price: ${signal_5m['price']:.4f}\n"
-                        f"📊 RSI: {signal_5m['rsi']:.1f}\n"
-                        f"📈 Signal captured for tracking"
+                        f"Entry: `${entry:.4f}`\n"
+                        f"Target: `${tp:.4f}`\n"
+                        f"Stop Loss: `${sl:.4f}`\n"
+                        f"RSI: `{signal_5m['rsi']:.1f}`\n"
+                        f"Time: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`"
                     )
                     self.send_telegram(message)
-                    
+
             except Exception as e:
                 logger.error(f"Error analyzing {symbol}: {e}")
-        
-        # Update active signals
-        self.analyzer.update_active_signals(self.fetch_price)
-        
+
+        # Update active signals and notify on close
+        self.analyzer.update_active_signals(self.fetch_price, self.send_telegram)
+
         # Log stats
         stats = self.analyzer.get_stats()
         logger.info(f"Stats - Total: {stats['total']}, Active: {stats['active']}, Win Rate: {stats['win_rate']:.1f}%")
-    
+
     def run(self):
         """Main run loop"""
         self.send_telegram("🤖 *Standalone Integrated Bot Started*\n\nMonitoring signals and tracking performance...")
-        
+
         while self.running:
             try:
                 self.run_analysis()
@@ -417,7 +460,7 @@ class StandaloneIntegratedBot:
             except Exception as e:
                 logger.error(f"Error in main loop: {e}")
                 time.sleep(60)
-        
+
         # Final stats
         stats = self.analyzer.get_stats()
         self.send_telegram(
@@ -432,9 +475,9 @@ if __name__ == "__main__":
     ╔═══════════════════════════════════════════╗
     ║    STANDALONE INTEGRATED BOT SYSTEM       ║
     ╚═══════════════════════════════════════════╝
-    
+
     Starting bot with integrated signal analyzer...
     """)
-    
+
     bot = StandaloneIntegratedBot()
     bot.run()
