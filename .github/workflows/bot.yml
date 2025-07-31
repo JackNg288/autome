@@ -18,41 +18,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Build & Install TA-Lib from source
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential wget tar automake autoconf libtool pkg-config
-          wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-          tar -xzf ta-lib-0.4.0-src.tar.gz
-          cd ta-lib/
-          ./configure --prefix=/usr/local
-          make
-          sudo make install
-          cd ..
-          sudo ldconfig
-          ls -l /usr/local/lib | grep ta_lib
-
-      - name: Verify TA-Lib Library
-        run: |
-          if [ ! -f /usr/local/lib/libta_lib.so ]; then
-            echo "TA-Lib library not found in /usr/local/lib!"
-            ls -l /usr/local/lib
-            exit 1
-          fi
-
       - name: Install dependencies
-        env:
-          LD_LIBRARY_PATH: /usr/local/lib
         run: |
           python -m pip install --upgrade pip
-          pip install --no-cache-dir ta-lib
           pip install -r requirements.txt
 
       - name: Run Signal Analyzer (1 hour)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          LD_LIBRARY_PATH: /usr/local/lib
         run: |
           timeout 3600 python signal_analyzer.py
 
@@ -74,39 +48,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Build & Install TA-Lib from source
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential wget tar automake autoconf libtool pkg-config
-          wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-          tar -xzf ta-lib-0.4.0-src.tar.gz
-          cd ta-lib/
-          ./configure --prefix=/usr/local
-          make
-          sudo make install
-          cd ..
-          sudo ldconfig
-          ls -l /usr/local/lib | grep ta_lib
-
-      - name: Verify TA-Lib Library
-        run: |
-          if [ ! -f /usr/local/lib/libta_lib.so ]; then
-            echo "TA-Lib library not found in /usr/local/lib!"
-            ls -l /usr/local/lib
-            exit 1
-          fi
-
       - name: Install dependencies
-        env:
-          LD_LIBRARY_PATH: /usr/local/lib
         run: |
           python -m pip install --upgrade pip
-          pip install --no-cache-dir ta-lib
           pip install -r requirements.txt
 
       - name: Run MEXC Bot (1 hour)
-        env:
-          LD_LIBRARY_PATH: /usr/local/lib
         run: |
           timeout 3600 python mexc_bot.py
 
@@ -129,28 +76,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Build & Install TA-Lib from source
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential wget tar automake autoconf libtool pkg-config
-          wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-          tar -xzf ta-lib-0.4.0-src.tar.gz
-          cd ta-lib/
-          ./configure --prefix=/usr/local
-          make
-          sudo make install
-          cd ..
-          sudo ldconfig
-          ls -l /usr/local/lib | grep ta_lib
-
-      - name: Verify TA-Lib Library
-        run: |
-          if [ ! -f /usr/local/lib/libta_lib.so ]; then
-            echo "TA-Lib library not found in /usr/local/lib!"
-            ls -l /usr/local/lib
-            exit 1
-          fi
-
       - name: Download Analyzer DB
         uses: actions/download-artifact@v4
         with:
@@ -162,17 +87,13 @@ jobs:
           name: signals-json
 
       - name: Install dependencies
-        env:
-          LD_LIBRARY_PATH: /usr/local/lib
         run: |
           python -m pip install --upgrade pip
-          pip install --no-cache-dir ta-lib
           pip install -r requirements.txt
 
       - name: Generate Report and Send to Telegram
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          LD_LIBRARY_PATH: /usr/local/lib
         run: |
           python -c "from signal_analyzer import SignalAnalyzer; analyzer = SignalAnalyzer(); report = analyzer.generate_performance_report(7); analyzer.send_telegram_alert(report); print('✅ Performance report sent')"
