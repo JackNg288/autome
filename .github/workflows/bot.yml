@@ -18,31 +18,21 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install TA-Lib system dependencies
+      - name: Install TA-Lib via apt
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential wget tar automake autoconf libtool pkg-config
-          wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-          tar -xzvf ta-lib-0.4.0-src.tar.gz
-          cd ta-lib/
-          ./configure --prefix=/usr
-          make
-          sudo make install
-          cd ..
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+          sudo apt-get install -y ta-lib
 
       - name: Install dependencies
         run: |
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
           python -m pip install --upgrade pip
-          pip install --no-cache-dir ta-lib
+          pip install ta-lib
           pip install -r requirements.txt
 
       - name: Run Signal Analyzer (1 hour)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          LD_LIBRARY_PATH: /usr/local/lib
         run: |
           timeout 3600 python signal_analyzer.py
 
@@ -64,29 +54,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install TA-Lib system dependencies
+      - name: Install TA-Lib via apt
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential wget tar automake autoconf libtool pkg-config
-          wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-          tar -xzvf ta-lib-0.4.0-src.tar.gz
-          cd ta-lib/
-          ./configure --prefix=/usr
-          make
-          sudo make install
-          cd ..
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+          sudo apt-get install -y ta-lib
 
       - name: Install dependencies
         run: |
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
           python -m pip install --upgrade pip
-          pip install --no-cache-dir ta-lib
+          pip install ta-lib
           pip install -r requirements.txt
 
       - name: Run MEXC Bot (1 hour)
-        env:
-          LD_LIBRARY_PATH: /usr/local/lib
         run: |
           timeout 3600 python mexc_bot.py
 
@@ -109,18 +88,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install TA-Lib system dependencies
+      - name: Install TA-Lib via apt
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential wget tar automake autoconf libtool pkg-config
-          wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-          tar -xzvf ta-lib-0.4.0-src.tar.gz
-          cd ta-lib/
-          ./configure --prefix=/usr
-          make
-          sudo make install
-          cd ..
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+          sudo apt-get install -y ta-lib
 
       - name: Download Analyzer DB
         uses: actions/download-artifact@v4
@@ -134,15 +105,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
           python -m pip install --upgrade pip
-          pip install --no-cache-dir ta-lib
+          pip install ta-lib
           pip install -r requirements.txt
 
       - name: Generate Report and Send to Telegram
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          LD_LIBRARY_PATH: /usr/local/lib
         run: |
           python -c "from signal_analyzer import SignalAnalyzer; analyzer = SignalAnalyzer(); report = analyzer.generate_performance_report(7); analyzer.send_telegram_alert(report); print('✅ Performance report sent')"
