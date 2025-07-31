@@ -87,7 +87,28 @@ class SignalAnalyzer:
         }
         
         logger.info("Signal Analyzer initialized")
-
+    
+    def send_telegram_alert(self, message: str):
+        """Send a message to your configured Telegram bot/chat"""
+        if not self.telegram_token or not self.chat_id:
+            logger.error("Telegram token or chat ID not set!")
+            return False
+        url = (
+            f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+            f"?chat_id={self.chat_id}&text={requests.utils.quote(message)}&parse_mode=Markdown"
+        )
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                logger.info("✅ Telegram alert sent!")
+                return True
+            else:
+                logger.error(f"Failed to send Telegram alert: {resp.text}")
+                return False
+        except Exception as e:
+            logger.error(f"Exception sending Telegram alert: {e}")
+            return False
+    
     def init_database(self):
         """Initialize SQLite database for signal storage"""
         conn = sqlite3.connect(self.db_file)
