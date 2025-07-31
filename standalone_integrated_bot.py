@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Standalone Integrated MEXC Bot + Signal Analyzer
-All-in-one file for easier deployment
+Enhanced Standalone Integrated MEXC Bot + Signal Analyzer
+With improved debugging and signal detection
 """
 
 import requests
@@ -19,10 +19,14 @@ from typing import Optional, Dict, Any, List
 import sqlite3
 from collections import defaultdict
 
-# Setup logging
+# Setup enhanced logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG,  # Changed to DEBUG for more info
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('enhanced_bot.log'),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -106,7 +110,7 @@ class MiniSignalAnalyzer:
             conn.commit()
             conn.close()
             
-            logger.info(f"Signal captured: {signal_id}")
+            logger.info(f"✅ Signal captured: {signal_id}")
             return f"✅ Signal captured: {symbol} {direction} @ ${entry_price:.4f}"
             
         except Exception as e:
@@ -124,6 +128,7 @@ class MiniSignalAnalyzer:
         ''')
         
         active_signals = cursor.fetchall()
+        updated = 0
         
         for signal in active_signals:
             signal_id, symbol, direction, entry_price, target_price, stop_loss = signal
@@ -145,8 +150,10 @@ class MiniSignalAnalyzer:
             new_status = 'ACTIVE'
             if hit_target:
                 new_status = 'WIN'
+                logger.info(f"🎯 Signal {signal_id} hit target!")
             elif hit_stop:
                 new_status = 'LOSS'
+                logger.info(f"🛑 Signal {signal_id} hit stop loss")
             
             cursor.execute('''
                 UPDATE signals 
@@ -154,11 +161,13 @@ class MiniSignalAnalyzer:
                 WHERE signal_id = ?
             ''', (current_price, pnl_percent, new_status, signal_id))
             
-            if new_status != 'ACTIVE':
-                logger.info(f"Signal {signal_id} closed: {new_status}")
+            updated += 1
         
         conn.commit()
         conn.close()
+        
+        if updated > 0:
+            logger.debug(f"Updated {updated} active signals")
     
     def get_stats(self) -> Dict:
         """Get basic statistics"""
@@ -190,13 +199,13 @@ class MiniSignalAnalyzer:
         }
 
 
-class StandaloneIntegratedBot:
-    """All-in-one MEXC Bot with integrated analyzer"""
+class EnhancedStandaloneBot:
+    """Enhanced MEXC Bot with better signal detection"""
     
     def __init__(self):
         self.analyzer = MiniSignalAnalyzer()
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'StandaloneBot/1.0'})
+        self.session.headers.update({'User-Agent': 'EnhancedBot/1.0'})
         
         # Configuration
         self.symbols = self.load_symbols()
@@ -215,9 +224,14 @@ class StandaloneIntegratedBot:
         self.telegram_token = os.getenv("TELEGRAM_TOKEN")
         self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
         
+        # Tracking
+        self.last_signals = {}  # Track last signal time per symbol
+        self.signal_cooldown = 300  # 5 minutes between signals per symbol
+        
         self.running = True
         
-        logger.info("Standalone Integrated Bot initialized")
+        logger.info(f"Enhanced Bot initialized with {len(self.symbols)} symbols")
+        logger.info(f"Symbols: {', '.join(self.symbols)}")
     
     def load_symbols(self) -> List[str]:
         """Load symbols from file or use defaults"""
@@ -228,10 +242,12 @@ class StandaloneIntegratedBot:
                 with open('symbols.txt', 'r') as f:
                     symbols = [line.strip().upper() for line in f.readlines() if line.strip()]
                     if symbols:
+                        logger.info(f"Loaded {len(symbols)} symbols from file")
                         return symbols
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Error loading symbols: {e}")
         
+        logger.info("Using default symbols")
         return default_symbols
     
     def fetch_price(self, symbol: str) -> Optional[float]:
@@ -241,49 +257,60 @@ class StandaloneIntegratedBot:
             url = f"{self.base_url}/api/v3/ticker/price"
             response = self.session.get(url, params={"symbol": symbol}, timeout=5)
             if response.status_code == 200:
-                return float(response.json().get('price', 0))
-        except:
-            pass
+                price = float(response.json().get('price', 0))
+                logger.debug(f"MEXC price for {symbol}: ${price}")
+                return price
+        except Exception as e:
+            logger.debug(f"MEXC price fetch failed for {symbol}: {e}")
         
         # Try Binance
         try:
             url = f"{self.binance_url}/api/v3/ticker/price"
             response = self.session.get(url, params={"symbol": symbol}, timeout=5)
             if response.status_code == 200:
-                return float(response.json().get('price', 0))
-        except:
-            pass
+                price = float(response.json().get('price', 0))
+                logger.debug(f"Binance price for {symbol}: ${price}")
+                return price
+        except Exception as e:
+            logger.debug(f"Binance price fetch failed for {symbol}: {e}")
         
+        logger.warning(f"Failed to fetch price for {symbol}")
         return None
     
     def fetch_klines(self, symbol: str, interval: str, limit: int = 100) -> Optional[pd.DataFrame]:
-        """Fetch kline data"""
-        try:
-            url = f"{self.base_url}/api/v3/klines"
-            params = {"symbol": symbol, "interval": interval, "limit": limit}
-            response = self.session.get(url, params=params, timeout=10)
-            
-            if response.status_code != 200:
-                # Try Binance
-                url = f"{self.binance_url}/api/v3/klines"
-                response = self.session.get(url, params=params, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data:
-                    df = pd.DataFrame(data, columns=[
-                        "timestamp", "open", "high", "low", "close", "volume", 
-                        "close_time", "quote_volume"
-                    ])
-                    
-                    numeric_cols = ["open", "high", "low", "close", "volume"]
-                    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric)
-                    df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-                    
-                    return df.sort_values("timestamp").reset_index(drop=True)
-        except Exception as e:
-            logger.error(f"Error fetching klines for {symbol}: {e}")
+        """Fetch kline data with enhanced error handling"""
+        apis = [
+            (self.base_url, "MEXC"),
+            (self.binance_url, "Binance")
+        ]
         
+        for base_url, api_name in apis:
+            try:
+                url = f"{base_url}/api/v3/klines"
+                params = {"symbol": symbol, "interval": interval, "limit": limit}
+                response = self.session.get(url, params=params, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data and len(data) > 0:
+                        df = pd.DataFrame(data, columns=[
+                            "timestamp", "open", "high", "low", "close", "volume", 
+                            "close_time", "quote_volume"
+                        ])
+                        
+                        numeric_cols = ["open", "high", "low", "close", "volume"]
+                        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric)
+                        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+                        
+                        logger.debug(f"✅ {api_name} klines for {symbol} {interval}: {len(df)} candles")
+                        return df.sort_values("timestamp").reset_index(drop=True)
+                else:
+                    logger.debug(f"{api_name} returned {response.status_code} for {symbol}")
+                    
+            except Exception as e:
+                logger.debug(f"{api_name} klines error for {symbol}: {e}")
+        
+        logger.warning(f"Failed to fetch klines for {symbol} {interval}")
         return None
     
     def calculate_rsi(self, prices: pd.Series) -> pd.Series:
@@ -291,13 +318,14 @@ class StandaloneIntegratedBot:
         delta = prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=self.rsi_period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=self.rsi_period).mean()
-        rs = gain / loss
-        return 100 - (100 / (1 + rs))
+        rs = gain / loss.replace(0, 0.0001)
+        rsi = 100 - (100 / (1 + rs))
+        return rsi.fillna(50)
     
     def check_signal(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Check for EMA crossover signal"""
+        """Check for EMA crossover signal with debug info"""
         if df is None or len(df) < 50:
-            return {"signal": None}
+            return {"signal": None, "reason": "Insufficient data"}
         
         try:
             # Calculate indicators
@@ -309,15 +337,35 @@ class StandaloneIntegratedBot:
             latest = df.iloc[-1]
             prev = df.iloc[-2]
             
+            # Debug info
+            logger.debug(f"Latest: EMA5={latest['ema5']:.2f}, EMA10={latest['ema10']:.2f}, RSI={latest['rsi']:.1f}")
+            logger.debug(f"Previous: EMA5={prev['ema5']:.2f}, EMA10={prev['ema10']:.2f}")
+            
             # Check crossovers
             bullish_cross = (latest["ema5"] > latest["ema10"]) and (prev["ema5"] <= prev["ema10"])
             bearish_cross = (latest["ema5"] < latest["ema10"]) and (prev["ema5"] >= prev["ema10"])
             
+            # RSI conditions
+            rsi_long_ok = latest["rsi"] > self.rsi_long_threshold
+            rsi_short_ok = latest["rsi"] < self.rsi_short_threshold
+            
             signal = None
-            if bullish_cross and latest["rsi"] > self.rsi_long_threshold:
-                signal = "LONG"
-            elif bearish_cross and latest["rsi"] < self.rsi_short_threshold:
-                signal = "SHORT"
+            reason = "No signal"
+            
+            if bullish_cross:
+                if rsi_long_ok:
+                    signal = "LONG"
+                    reason = f"Bullish cross + RSI {latest['rsi']:.1f} > {self.rsi_long_threshold}"
+                else:
+                    reason = f"Bullish cross but RSI {latest['rsi']:.1f} too low"
+            elif bearish_cross:
+                if rsi_short_ok:
+                    signal = "SHORT"
+                    reason = f"Bearish cross + RSI {latest['rsi']:.1f} < {self.rsi_short_threshold}"
+                else:
+                    reason = f"Bearish cross but RSI {latest['rsi']:.1f} too high"
+            
+            logger.debug(f"Signal check: {reason}")
             
             return {
                 "signal": signal,
@@ -326,16 +374,18 @@ class StandaloneIntegratedBot:
                 "ema10": float(latest["ema10"]),
                 "ema15": float(latest["ema15"]),
                 "rsi": float(latest["rsi"]),
-                "volume": float(latest["volume"])
+                "volume": float(latest["volume"]),
+                "reason": reason
             }
             
         except Exception as e:
             logger.error(f"Signal calculation error: {e}")
-            return {"signal": None}
+            return {"signal": None, "reason": f"Error: {str(e)}"}
     
     def send_telegram(self, message: str):
         """Send Telegram message"""
         if not self.telegram_token or not self.chat_id:
+            logger.warning("Telegram credentials not set")
             return
         
         try:
@@ -345,33 +395,66 @@ class StandaloneIntegratedBot:
                 "text": message,
                 "parse_mode": "Markdown"
             }
-            requests.post(url, data=payload, timeout=10)
+            response = requests.post(url, data=payload, timeout=10)
+            if response.status_code == 200:
+                logger.info("✅ Telegram message sent")
+            else:
+                logger.error(f"Telegram error: {response.status_code}")
         except Exception as e:
             logger.error(f"Telegram error: {e}")
     
+    def check_cooldown(self, symbol: str) -> bool:
+        """Check if enough time has passed since last signal"""
+        if symbol not in self.last_signals:
+            return True
+        
+        time_since_last = time.time() - self.last_signals[symbol]
+        return time_since_last >= self.signal_cooldown
+    
     def run_analysis(self):
-        """Run single analysis cycle"""
-        logger.info("Running analysis...")
+        """Run single analysis cycle with enhanced debugging"""
+        logger.info("🔍 Running analysis cycle...")
+        signals_checked = 0
         
         for symbol in self.symbols:
             try:
+                # Skip if in cooldown
+                if not self.check_cooldown(symbol):
+                    logger.debug(f"⏳ {symbol} in cooldown period")
+                    continue
+                
                 # Fetch data
-                df_5m = self.fetch_klines(symbol, "5m")
-                df_15m = self.fetch_klines(symbol, "15m")
+                logger.debug(f"Analyzing {symbol}...")
+                df_5m = self.fetch_klines(symbol, "5m", 100)
+                df_15m = self.fetch_klines(symbol, "15m", 100)
                 
                 if df_5m is None or df_15m is None:
+                    logger.warning(f"❌ No data for {symbol}")
                     continue
                 
                 # Check signals
                 signal_5m = self.check_signal(df_5m)
                 signal_15m = self.check_signal(df_15m)
                 
-                # Determine final signal
+                logger.debug(f"{symbol} 5m signal: {signal_5m.get('signal')} - {signal_5m.get('reason')}")
+                logger.debug(f"{symbol} 15m signal: {signal_15m.get('signal')} - {signal_15m.get('reason')}")
+                
+                # Determine final signal (both timeframes must agree)
                 signal = None
                 if signal_5m["signal"] == "LONG" and signal_15m["signal"] == "LONG":
                     signal = "LONG"
+                    logger.info(f"🟢 LONG signal confirmed for {symbol}!")
                 elif signal_5m["signal"] == "SHORT" and signal_15m["signal"] == "SHORT":
                     signal = "SHORT"
+                    logger.info(f"🔴 SHORT signal confirmed for {symbol}!")
+                elif signal_5m["signal"] == "LONG" and signal_15m.get("rsi", 50) > self.rsi_long_threshold:
+                    # Relaxed condition: 5m signal + 15m RSI confirmation
+                    signal = "LONG"
+                    logger.info(f"🟢 LONG signal (5m + RSI) for {symbol}!")
+                elif signal_5m["signal"] == "SHORT" and signal_15m.get("rsi", 50) < self.rsi_short_threshold:
+                    # Relaxed condition: 5m signal + 15m RSI confirmation
+                    signal = "SHORT"
+                    logger.info(f"🔴 SHORT signal (5m + RSI) for {symbol}!")
                 
                 if signal:
                     # Capture signal
@@ -379,21 +462,30 @@ class StandaloneIntegratedBot:
                         'symbol': symbol,
                         'direction': signal,
                         'entry_price': signal_5m['price'],
-                        'confidence': 70
+                        'confidence': 70 if signal_5m["signal"] == signal_15m["signal"] else 60
                     }
                     
                     result = self.analyzer.capture_signal(signal_data)
                     logger.info(result)
                     
+                    # Update cooldown
+                    self.last_signals[symbol] = time.time()
+                    
                     # Send Telegram notification
                     message = (
-                        f"{'🟢' if signal == 'LONG' else '🔴'} *{signal} SIGNAL: {symbol}*\n"
-                        f"💰 Price: ${signal_5m['price']:.4f}\n"
-                        f"📊 RSI: {signal_5m['rsi']:.1f}\n"
+                        f"{'🟢' if signal == 'LONG' else '🔴'} *{signal} SIGNAL: {symbol}*\n\n"
+                        f"💰 Entry Price: ${signal_5m['price']:.4f}\n"
+                        f"📊 Indicators:\n"
+                        f"• EMA5: ${signal_5m['ema5']:.4f}\n"
+                        f"• EMA10: ${signal_5m['ema10']:.4f}\n"
+                        f"• RSI: {signal_5m['rsi']:.1f}\n\n"
+                        f"⏰ Time: {datetime.now().strftime('%H:%M:%S')}\n"
                         f"📈 Signal captured for tracking"
                     )
                     self.send_telegram(message)
-                    
+                
+                signals_checked += 1
+                
             except Exception as e:
                 logger.error(f"Error analyzing {symbol}: {e}")
         
@@ -402,17 +494,35 @@ class StandaloneIntegratedBot:
         
         # Log stats
         stats = self.analyzer.get_stats()
-        logger.info(f"Stats - Total: {stats['total']}, Active: {stats['active']}, Win Rate: {stats['win_rate']:.1f}%")
+        logger.info(
+            f"📊 Stats - Checked: {signals_checked}, "
+            f"Total: {stats['total']}, Active: {stats['active']}, "
+            f"Wins: {stats['wins']}, Losses: {stats['losses']}, "
+            f"Win Rate: {stats['win_rate']:.1f}%"
+        )
     
     def run(self):
         """Main run loop"""
-        self.send_telegram("🤖 *Standalone Integrated Bot Started*\n\nMonitoring signals and tracking performance...")
+        startup_msg = (
+            "🤖 *Enhanced Standalone Bot Started*\n\n"
+            f"📊 Monitoring {len(self.symbols)} symbols\n"
+            f"⚙️ Strategy: EMA5/10 crossover + RSI\n"
+            f"🎯 RSI: Long >{self.rsi_long_threshold}, Short <{self.rsi_short_threshold}\n"
+            f"⏱ Scan interval: 30s\n\n"
+            "Signals are captured and tracked automatically!"
+        )
+        self.send_telegram(startup_msg)
+        
+        # Run test analysis
+        logger.info("Running initial test...")
+        self.run_analysis()
         
         while self.running:
             try:
+                time.sleep(30)  # Wait before next cycle
                 self.run_analysis()
-                time.sleep(30)  # 30 second intervals
             except KeyboardInterrupt:
+                logger.info("Bot stopped by user")
                 break
             except Exception as e:
                 logger.error(f"Error in main loop: {e}")
@@ -420,21 +530,32 @@ class StandaloneIntegratedBot:
         
         # Final stats
         stats = self.analyzer.get_stats()
-        self.send_telegram(
+        final_msg = (
             f"🛑 *Bot Stopped*\n\n"
-            f"Total Signals: {stats['total']}\n"
-            f"Win Rate: {stats['win_rate']:.1f}%"
+            f"📊 Final Statistics:\n"
+            f"• Total Signals: {stats['total']}\n"
+            f"• Wins: {stats['wins']}\n"
+            f"• Losses: {stats['losses']}\n"
+            f"• Win Rate: {stats['win_rate']:.1f}%"
         )
+        self.send_telegram(final_msg)
 
 
 if __name__ == "__main__":
     print("""
-    ╔═══════════════════════════════════════════╗
-    ║    STANDALONE INTEGRATED BOT SYSTEM       ║
-    ╚═══════════════════════════════════════════╝
+    ╔═══════════════════════════════════════════════════════╗
+    ║    ENHANCED STANDALONE BOT WITH SIGNAL ANALYZER       ║
+    ╚═══════════════════════════════════════════════════════╝
     
-    Starting bot with integrated signal analyzer...
+    Features:
+    ✅ Enhanced debugging and logging
+    ✅ Relaxed signal conditions
+    ✅ API fallback (MEXC → Binance)
+    ✅ Signal cooldown to prevent spam
+    ✅ Detailed signal analysis
+    
+    Starting enhanced bot...
     """)
     
-    bot = StandaloneIntegratedBot()
+    bot = EnhancedStandaloneBot()
     bot.run()
