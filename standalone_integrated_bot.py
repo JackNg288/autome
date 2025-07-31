@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Standalone Integrated MEXC Bot + Multi-Strategy Signal Analyzer
+Standalone Integrated MEXC Bot + Multi-Strategy Signal Analyzer + Verification
 """
 
 import requests
@@ -20,7 +20,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
 
 class MiniSignalAnalyzer:
     def __init__(self):
@@ -187,7 +186,6 @@ class MiniSignalAnalyzer:
             'win_rate': win_rate
         }
 
-
 class StandaloneIntegratedBot:
     def __init__(self):
         self.analyzer = MiniSignalAnalyzer()
@@ -275,6 +273,39 @@ class StandaloneIntegratedBot:
         signal_line = macd.ewm(span=signal, adjust=False).mean()
         return macd, signal_line
 
+    # --- Verification Methods ---
+
+    def check_confluence(self, signal_list, direction):
+        """Return True if more than one strategy gave this signal."""
+        count = sum(1 for sig in signal_list if sig['signal'] == direction)
+        return count > 1
+
+    def check_higher_tf_trend(self, symbol, direction, tf='1h'):
+        """Check higher timeframe trend direction using EMA10/20."""
+        df = self.fetch_klines(symbol, tf, limit=30)
+        if df is None or len(df) < 25:
+            return False
+        df['ema10'] = df['close'].ewm(span=10, adjust=False).mean()
+        df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
+        latest = df.iloc[-1]
+        if direction == 'LONG':
+            return latest['ema10'] > latest['ema20']
+        else:
+            return latest['ema10'] < latest['ema20']
+
+    def check_support_resistance(self, df, entry_price, direction, threshold_pct=1.0):
+        """Check if entry is too close to support (LONG) or resistance (SHORT)."""
+        closes = df['close'].iloc[-30:]
+        support = closes.min()
+        resistance = closes.max()
+        if direction == 'LONG':
+            dist = ((entry_price - support) / entry_price) * 100
+            return dist > threshold_pct  # 🟢 if far from support
+        else:
+            dist = ((resistance - entry_price) / entry_price) * 100
+            return dist > threshold_pct  # 🟢 if far from resistance
+
+    # --- Signal Detection ---
     def check_signals(self, df):
         signals = []
         if df is None or len(df) < 50:
@@ -401,7 +432,6 @@ class StandaloneIntegratedBot:
         logger.info("Running analysis...")
         for symbol in self.symbols:
             try:
-                # Use 5m and 15m by default
                 for tf in ["5m", "15m"]:
                     df = self.fetch_klines(symbol, tf)
                     if df is None:
@@ -418,6 +448,15 @@ class StandaloneIntegratedBot:
                         conn.close()
                         if already_active:
                             continue
+
+                        # --- VERIFICATION FLAGS ---
+                        confluence_flag = self.check_confluence(signals, sig['signal'])
+                        confluence_str = '🟢' if confluence_flag else '🔴'
+                        higher_tf_flag = self.check_higher_tf_trend(symbol, sig['signal'], tf='1h')
+                        higher_tf_str = '🟢' if higher_tf_flag else '🔴'
+                        sr_flag = self.check_support_resistance(df, sig['price'], sig['signal'])
+                        sr_str = '🟢' if sr_flag else '🔴'
+
                         # Store and notify
                         signal_data = {
                             'symbol': symbol,
@@ -451,7 +490,10 @@ class StandaloneIntegratedBot:
                             f"RSI: `{sig['rsi']:.1f}`\n"
                             f"MACD: `{sig['macd']:.4f}` | MACD Signal: `{sig['macd_signal']:.4f}`\n"
                             f"Volume: `{sig['volume']:.2f}`\n"
-                            f"Time: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`"
+                            f"Time: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                            f"Multi-strategy confluence: {confluence_str}\n"
+                            f"Higher timeframe trend: {higher_tf_str}\n"
+                            f"S/R-Price action filter: {sr_str}"
                         )
                         self.send_telegram(message)
 
@@ -463,6 +505,22 @@ class StandaloneIntegratedBot:
         # Log stats
         stats = self.analyzer.get_stats()
         logger.info(f"Stats - Total: {stats['total']}, Active: {stats['active']}, Win Rate: {stats['win_rate']:.1f}%")
+
+    def send_telegram(self, message):
+        token = self.telegram_token
+        chat_id = self.chat_id
+        if not token or not chat_id:
+            return
+        try:
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            }
+            requests.post(url, data=payload, timeout=10)
+        except Exception as e:
+            logger.error(f"Telegram error: {e}")
 
     def run(self):
         self.send_telegram("🤖 *Standalone Integrated Bot Started*\n\nMonitoring signals and tracking performance...")
@@ -485,7 +543,7 @@ class StandaloneIntegratedBot:
 if __name__ == "__main__":
     print("""
     ╔═══════════════════════════════════════════╗
-    ║    STANDALONE INTEGRATED BOT SYSTEM       ║
+    ║    STANDALONE INTEGRATED BOT SYSTEM      ║
     ╚═══════════════════════════════════════════╝
 
     Starting bot with integrated signal analyzer...
