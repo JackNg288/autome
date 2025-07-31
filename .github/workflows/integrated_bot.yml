@@ -2,8 +2,6 @@ name: Integrated Bot + Analyzer System
 
 on:
   workflow_dispatch:  # Manual trigger
-  schedule:
-    - cron: "0 */6 * * *"  # Run every 6 hours
 
 jobs:
   run-integrated-system:
