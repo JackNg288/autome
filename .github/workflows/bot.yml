@@ -1,108 +1,99 @@
-name: MEXC Bot with Signal Analyzer
+name: MEXC Bot Workflow
 
-on:
-  workflow_dispatch:  # Manual trigger
+on: 
+  workflow_dispatch:
   schedule:
-    - cron: '30 * * * *'  # Run every 30 mins
+    - cron: "0 */6 * * *"   # every 6 hours
 
 jobs:
   run-analyzer:
+    name: Run Signal Analyzer
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        
-    - name: Install dependencies
-      run: |
-        pip install requests pandas numpy python-dotenv scikit-learn
-        echo "✅ Dependencies installed"
-    
-    - name: Initialize database
-      run: |
-        python -c "
-        from signal_analyzer import SignalAnalyzer
-        analyzer = SignalAnalyzer()
-        print('✅ Database initialized')
-        "
-        
-    - name: Run Signal Analyzer
-      env:
-        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        echo "🚀 Starting Signal Analyzer..."
-        timeout 25m python signal_analyzer.py &
-        ANALYZER_PID=$!
-        echo "Analyzer PID: $ANALYZER_PID"
-        
-        # Keep analyzer running
-        wait $ANALYZER_PID || true
-        
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Signal Analyzer (1 hour)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          timeout 3600 python signal_analyzer.py
+
+      - name: Upload Analyzer DB
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyzer-db
+          path: signals_database.db
+
   run-bot:
+    name: Run MEXC Bot
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    needs: run-analyzer
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        
-    - name: Install dependencies
-      run: |
-        pip install requests pandas numpy python-dotenv
-        echo "✅ Dependencies installed"
-        
-    - name: Run MEXC Bot
-      env:
-        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        echo "🚀 Starting MEXC Bot..."
-        python mexc_bot.py
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run MEXC Bot (1 hour)
+        run: |
+          timeout 3600 python mexc_bot.py
+
+      - name: Upload Signals JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: signals-json
+          path: active_signals.json
 
   generate-report:
+    name: Generate Performance Report
     runs-on: ubuntu-latest
     needs: [run-analyzer, run-bot]
-    if: always()
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        
-    - name: Install dependencies
-      run: |
-        pip install requests pandas numpy python-dotenv
-        
-    - name: Generate Performance Report
-      env:
-        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        python -c "
-        from signal_analyzer import SignalAnalyzer
-        analyzer = SignalAnalyzer()
-        report = analyzer.generate_performance_report(7)
-        analyzer.send_telegram_alert(report)
-        print('✅ Performance report sent')
-        "
-        
-    - name: Upload signal database
-      uses: actions/upload-artifact@v4
-      with:
-        name: signal-database
-        path: |
-          signals_database.db
-          active_signals.json
-          manual_signals.json
-        retention-days: 30
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download Analyzer DB
+        uses: actions/download-artifact@v4
+        with:
+          name: analyzer-db
+
+      - name: Download Signals JSON
+        uses: actions/download-artifact@v4
+        with:
+          name: signals-json
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate Report and Send to Telegram
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -c "from signal_analyzer import SignalAnalyzer; analyzer = SignalAnalyzer(); report = analyzer.generate_performance_report(7); analyzer.send_telegram_alert(report); print('✅ Performance report sent')"
