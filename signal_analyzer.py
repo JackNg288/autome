@@ -40,6 +40,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class SignalAnalyzer:
+    def update_active_signals(self):
+        print("DEBUG: Checking for", self.signal_file, "in", os.getcwd())
+        if os.path.exists(self.signal_file):
+            with open(self.signal_file, 'r') as f:
+                try:
+                    active_signals = json.load(f)
+                except Exception as e:
+                    print("DEBUG: Failed to parse JSON:", e)
+                    active_signals = []
+            print(f"DEBUG: Loaded {len(active_signals)} signals")
+        else:
+            print("DEBUG: signals file does not exist")
+            active_signals = []
+            
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': 'SignalAnalyzer/1.0'})
