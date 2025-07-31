@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Standalone Integrated MEXC Bot + Multi-Strategy Signal Analyzer + Verification
+Standalone Integrated MEXC Bot + Multi-Strategy Signal Analyzer + 2/3 Verification
 """
 
 import requests
@@ -52,14 +52,11 @@ class MiniSignalAnalyzer:
         logger.info("Database initialized")
 
     def capture_signal(self, signal_data):
-        """Capture and store signal"""
         try:
             symbol = signal_data.get('symbol')
             direction = signal_data.get('direction', '').upper()
             entry_price = float(signal_data.get('entry_price', 0))
             reason = signal_data.get('reason', '')
-
-            # Calculate TP/SL (2% SL, 4% TP for now)
             atr_percent = 2.0
             if direction == "LONG":
                 stop_loss = entry_price * (1 - atr_percent / 100)
@@ -67,7 +64,6 @@ class MiniSignalAnalyzer:
             else:
                 stop_loss = entry_price * (1 + atr_percent / 100)
                 target_price = entry_price * (1 - atr_percent * 2 / 100)
-
             signal_id = f"{symbol}_{direction}_{int(time.time())}"
 
             conn = sqlite3.connect(self.db_file)
@@ -101,7 +97,6 @@ class MiniSignalAnalyzer:
             return f"❌ Error: {str(e)}"
 
     def update_active_signals(self, price_fetcher, telegram_sender=None):
-        """Update active signals with current prices and send Telegram on close"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         cursor.execute('''
@@ -114,7 +109,6 @@ class MiniSignalAnalyzer:
             current_price = price_fetcher(symbol)
             if not current_price:
                 continue
-            # Calculate PnL
             if direction == "LONG":
                 pnl_percent = ((current_price - entry_price) / entry_price) * 100
                 hit_target = current_price >= target_price
@@ -165,7 +159,6 @@ class MiniSignalAnalyzer:
         conn.close()
 
     def get_stats(self):
-        """Get basic statistics"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM signals')
@@ -218,7 +211,6 @@ class StandaloneIntegratedBot:
         return default_symbols
 
     def fetch_price(self, symbol):
-        # Try MEXC
         try:
             url = f"{self.base_url}/api/v3/ticker/price"
             response = self.session.get(url, params={"symbol": symbol}, timeout=5)
@@ -226,7 +218,6 @@ class StandaloneIntegratedBot:
                 return float(response.json().get('price', 0))
         except:
             pass
-        # Try Binance
         try:
             url = f"{self.binance_url}/api/v3/ticker/price"
             response = self.session.get(url, params={"symbol": symbol}, timeout=5)
@@ -273,15 +264,11 @@ class StandaloneIntegratedBot:
         signal_line = macd.ewm(span=signal, adjust=False).mean()
         return macd, signal_line
 
-    # --- Verification Methods ---
-
     def check_confluence(self, signal_list, direction):
-        """Return True if more than one strategy gave this signal."""
         count = sum(1 for sig in signal_list if sig['signal'] == direction)
         return count > 1
 
     def check_higher_tf_trend(self, symbol, direction, tf='1h'):
-        """Check higher timeframe trend direction using EMA10/20."""
         df = self.fetch_klines(symbol, tf, limit=30)
         if df is None or len(df) < 25:
             return False
@@ -294,24 +281,21 @@ class StandaloneIntegratedBot:
             return latest['ema10'] < latest['ema20']
 
     def check_support_resistance(self, df, entry_price, direction, threshold_pct=1.0):
-        """Check if entry is too close to support (LONG) or resistance (SHORT)."""
         closes = df['close'].iloc[-30:]
         support = closes.min()
         resistance = closes.max()
         if direction == 'LONG':
             dist = ((entry_price - support) / entry_price) * 100
-            return dist > threshold_pct  # 🟢 if far from support
+            return dist > threshold_pct
         else:
             dist = ((resistance - entry_price) / entry_price) * 100
-            return dist > threshold_pct  # 🟢 if far from resistance
+            return dist > threshold_pct
 
-    # --- Signal Detection ---
     def check_signals(self, df):
         signals = []
         if df is None or len(df) < 50:
             return signals
         try:
-            # Compute all indicators
             df["ema5"] = df["close"].ewm(span=self.ema5_period, adjust=False).mean()
             df["ema10"] = df["close"].ewm(span=self.ema10_period, adjust=False).mean()
             df["ema15"] = df["close"].ewm(span=self.ema15_period, adjust=False).mean()
@@ -322,11 +306,8 @@ class StandaloneIntegratedBot:
             df["bb_upper"] = df["bb_mid"] + 2 * df["bb_std"]
             df["bb_lower"] = df["bb_mid"] - 2 * df["bb_std"]
             df["vol_avg"] = df["volume"].rolling(window=20).mean()
-
             latest = df.iloc[-1]
             prev = df.iloc[-2]
-
-            # 1. EMA5/10 Crossover + RSI
             bullish_cross = (latest["ema5"] > latest["ema10"]) and (prev["ema5"] <= prev["ema10"])
             bearish_cross = (latest["ema5"] < latest["ema10"]) and (prev["ema5"] >= prev["ema10"])
             if bullish_cross and latest["rsi"] > self.rsi_long_threshold:
@@ -339,8 +320,6 @@ class StandaloneIntegratedBot:
                     "signal": "SHORT",
                     "reason": "EMA5/10 bearish crossover & RSI confirmation",
                 })
-
-            # 2. MACD Crossover + RSI Filter
             macd_bull = (latest["macd"] > latest["macd_signal"]) and (prev["macd"] <= prev["macd_signal"]) and latest["rsi"] > 50
             macd_bear = (latest["macd"] < latest["macd_signal"]) and (prev["macd"] >= prev["macd_signal"]) and latest["rsi"] < 50
             if macd_bull:
@@ -353,8 +332,6 @@ class StandaloneIntegratedBot:
                     "signal": "SHORT",
                     "reason": "MACD bearish crossover & RSI<50"
                 })
-
-            # 3. RSI Oversold/Overbought Reversal
             rsi_oversold = (prev["rsi"] < 30 and latest["rsi"] >= 30)
             rsi_overbought = (prev["rsi"] > 70 and latest["rsi"] <= 70)
             if rsi_oversold:
@@ -367,8 +344,6 @@ class StandaloneIntegratedBot:
                     "signal": "SHORT",
                     "reason": "RSI overbought reversal (crossed down 70)"
                 })
-
-            # 4. Bollinger Band Reversal
             bb_long = (prev["close"] < prev["bb_lower"] and latest["close"] > latest["bb_lower"])
             bb_short = (prev["close"] > prev["bb_upper"] and latest["close"] < latest["bb_upper"])
             if bb_long:
@@ -381,8 +356,6 @@ class StandaloneIntegratedBot:
                     "signal": "SHORT",
                     "reason": "Bollinger Band upper reversal"
                 })
-
-            # 5. Price/Volume Breakout
             if (latest["close"] > df["close"].iloc[-21:-1].max()) and (latest["volume"] > 2 * latest["vol_avg"]):
                 signals.append({
                     "signal": "LONG",
@@ -393,7 +366,6 @@ class StandaloneIntegratedBot:
                     "signal": "SHORT",
                     "reason": "Price breakout new low with volume spike"
                 })
-
             for sig in signals:
                 sig.update({
                     "price": float(latest["close"]),
@@ -407,7 +379,6 @@ class StandaloneIntegratedBot:
                     "bb_lower": float(latest["bb_lower"]),
                     "volume": float(latest["volume"]),
                 })
-
         except Exception as e:
             logger.error(f"Signal calculation error: {e}")
         return signals
@@ -457,7 +428,10 @@ class StandaloneIntegratedBot:
                         sr_flag = self.check_support_resistance(df, sig['price'], sig['signal'])
                         sr_str = '🟢' if sr_flag else '🔴'
 
-                        # Store and notify
+                        passed = sum([confluence_flag, higher_tf_flag, sr_flag])
+                        if passed < 2:
+                            continue  # Only send/store if at least 2 verifications are green
+
                         signal_data = {
                             'symbol': symbol,
                             'direction': sig['signal'],
@@ -466,7 +440,6 @@ class StandaloneIntegratedBot:
                             'reason': sig.get('reason', '')
                         }
                         self.analyzer.capture_signal(signal_data)
-                        # TP/SL lookup
                         conn = sqlite3.connect(self.analyzer.db_file)
                         cursor = conn.cursor()
                         cursor.execute('''
@@ -496,13 +469,9 @@ class StandaloneIntegratedBot:
                             f"S/R-Price action filter: {sr_str}"
                         )
                         self.send_telegram(message)
-
             except Exception as e:
                 logger.error(f"Error analyzing {symbol}: {e}")
-
-        # Update active signals and notify on close
         self.analyzer.update_active_signals(self.fetch_price, self.send_telegram)
-        # Log stats
         stats = self.analyzer.get_stats()
         logger.info(f"Stats - Total: {stats['total']}, Active: {stats['active']}, Win Rate: {stats['win_rate']:.1f}%")
 
@@ -527,7 +496,7 @@ class StandaloneIntegratedBot:
         while self.running:
             try:
                 self.run_analysis()
-                time.sleep(30)  # 30 seconds
+                time.sleep(30)
             except KeyboardInterrupt:
                 break
             except Exception as e:
